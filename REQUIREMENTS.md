@@ -284,7 +284,7 @@ Common **`Instrument`** model + small interface set so adding an asset class is 
 | **Backend** | **Python + FastAPI** | Single source of truth: auth/RBAC, marketplace, billing, brokers, strategies, risk, agent orchestration. REST/JSON + WebSocket, OpenAPI. |
 | **Frontend (web)** | **React + TypeScript SPA via Vite** | Pure client, clean FE/BE separation. No SSR (behind login). |
 | **Mobile (later)** | **React Native + Expo** | Shares logic with web via `core`; UI rebuilt. |
-| **Charts (price)** | **TradingView Lightweight Charts** + free **TradingView Widgets** | Web. Free. Widgets (advanced chart, mini-chart, ticker, screener) are drop-in embeds — used to accelerate the MVP. |
+| **Charts (price)** | **TradingView Lightweight Charts** + free **TradingView Widgets** | Web. Free. Widgets (advanced chart, mini-chart, ticker, screener) are drop-in embeds — used to accelerate the MVP. **Indicators (SMA/EMA/RSI/…) are computed in-app and drawn as overlay series** — Lightweight Charts has no built-in studies. Upgrade path for the full built-in indicator suite + drawing tools is TradingView's **Charting Library** (free but requires access approval + a datafeed adapter); adopt only when rich charting is needed. The sealed **Widget** iframe cannot render our own bot signals/markers, so it's for generic symbol views only. |
 | **Charts (analytics)** | Recharts / visx | Performance, allocation, drawdown, greeks. |
 | **Tables** | **TanStack Table** (+ virtualization) | Marketplace lists, positions, orders. |
 | **Server state / fetching** | **TanStack Query** | Works web + RN. |

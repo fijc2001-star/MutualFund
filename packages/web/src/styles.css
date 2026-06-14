@@ -93,6 +93,57 @@ body {
 .status-live { color: #26a69a; }
 .status-closed { color: #ef5350; }
 
+.marker-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1c2230;
+  flex-wrap: wrap;
+}
+
+.marker-toolbar button {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.marker-toolbar button.buy.active {
+  background: #1f6f63;
+  border-color: #26a69a;
+  color: #eafff9;
+}
+
+.marker-toolbar button.sell.active {
+  background: #7a2f30;
+  border-color: #ef5350;
+  color: #ffecec;
+}
+
+.marker-toolbar button.sma9.active {
+  background: #5c4a12;
+  border-color: #f0b429;
+  color: #fff6e0;
+}
+
+.marker-toolbar button.sma21.active {
+  background: #1b347a;
+  border-color: #2962ff;
+  color: #e6edff;
+}
+
+.marker-toolbar .divider {
+  width: 1px;
+  height: 20px;
+  background: #232a3a;
+  margin: 0 4px;
+}
+
 .chart-canvas {
   height: 460px;
   width: 100%;
