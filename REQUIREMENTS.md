@@ -336,6 +336,29 @@ Monorepo via **pnpm + Turborepo**. Split protects the future mobile path: shared
 
 ---
 
+## 11.5 Competitive Landscape
+
+> Market scan as of mid-2026. The concept is **not** novel — the category exists; our edge is execution (AI copilot + per-subscription sandbox + verifiable trust) and the equities/options focus.
+
+**Direct competitors (closest to our model):**
+- **Collective2 — the primary benchmark.** Strategy creators collect **subscription fees**; investors follow/copy trades into their **own brokerage** (Interactive Brokers, StoneX, IG); supports **stocks, options, forex, futures**. Nearly our model. Strengths: track record, broker breadth. Weaknesses: dated UX, no AI copilot, weak simulation. *Study how they navigate US investment-adviser regulation (§11).*
+- **StockHero** — bot marketplace where users build bots or **rent strategies**, connecting to major brokers via API ("MetaTrader Signals Market + social copy trading").
+
+**Adjacent / category competitors:**
+- **Copy-trading (broker-locked, not BYO-broker):** eToro (CopyTrader — but trades on eToro's own brokerage), ZuluTrade, NAGA (mostly forex/CFD).
+- **Crypto bot marketplaces (our model, different asset class):** Cryptohopper (Strategy Designer + Marketplace + social — architecturally most similar), Mizar, Neuraflow, SaintQuant.
+- **Quant/strategy platforms (build-your-own):** QuantConnect (developer-heavy), Composer (no-code, US-equity portfolios), TradingView (Pine + community, **no execution marketplace**), MetaTrader Signals Market (forex, MT4/MT5-locked).
+
+**White space / our differentiation:**
+1. **Equities + options bot marketplace with a modern AI copilot** — C2 has the model without the AI/UX; crypto platforms have the UX without the asset classes.
+2. **Per-subscription sandbox** — personalized live simulation before risking real money; most copy-trading drops users straight into live trades.
+3. **Tamper-resistant, hash-chained track records** (§5.8.1) — verifiable performance in a category routinely criticized for cherry-picking.
+4. **Bring-your-own brokerage** — vs. eToro's walled garden.
+
+> **Threat read:** Collective2 proves the model is viable and legal-navigable for US stocks/options — so the risk isn't "no market," it's entering an established category. Differentiation rests on AI + sandbox + verified trust, not the concept itself.
+
+---
+
 ## 12. Suggested MVP Scope (v0.1)
 
 1. Auth + **RBAC** with User/Designer/Admin roles and a config-bootstrapped **root admin**.

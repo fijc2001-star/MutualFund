@@ -338,6 +338,29 @@ Monorepo vía **pnpm + Turborepo**. La división protege el futuro camino móvil
 
 ---
 
+## 11.5 Panorama Competitivo
+
+> Escaneo de mercado a mediados de 2026. El concepto **no** es novedoso — la categoría existe; nuestra ventaja es la ejecución (copiloto de IA + sandbox por suscripción + confianza verificable) y el enfoque en acciones/opciones.
+
+**Competidores directos (lo más cercano a nuestro modelo):**
+- **Collective2 — el referente principal.** Los creadores de estrategias cobran **tarifas de suscripción**; los inversores siguen/copian las operaciones en su **propio bróker** (Interactive Brokers, StoneX, IG); soporta **acciones, opciones, forex, futuros**. Casi nuestro modelo. Fortalezas: historial, amplitud de brókers. Debilidades: UX anticuada, sin copiloto de IA, simulación débil. *Estudiar cómo navegan la regulación de asesores de inversión de EE. UU. (§11).*
+- **StockHero** — mercado de bots donde los usuarios construyen bots o **alquilan estrategias**, conectándose a brókers principales vía API ("MetaTrader Signals Market + copy trading social").
+
+**Competidores adyacentes / de categoría:**
+- **Copy-trading (atado al bróker, no BYO-bróker):** eToro (CopyTrader — pero opera en el bróker propio de eToro), ZuluTrade, NAGA (mayormente forex/CFD).
+- **Mercados de bots de cripto (nuestro modelo, otra clase de activo):** Cryptohopper (Strategy Designer + Marketplace + social — arquitectónicamente el más similar), Mizar, Neuraflow, SaintQuant.
+- **Plataformas cuant/de estrategias (construye-lo-tuyo):** QuantConnect (orientada a desarrolladores), Composer (sin código, portafolios de acciones de EE. UU.), TradingView (Pine + comunidad, **sin mercado de ejecución**), MetaTrader Signals Market (forex, atado a MT4/MT5).
+
+**Espacio en blanco / nuestra diferenciación:**
+1. **Mercado de bots de acciones + opciones con un copiloto de IA moderno** — C2 tiene el modelo sin la IA/UX; las plataformas de cripto tienen la UX sin las clases de activo.
+2. **Sandbox por suscripción** — simulación en vivo personalizada antes de arriesgar dinero real; la mayoría del copy-trading lanza a los usuarios directo a operaciones en vivo.
+3. **Historiales resistentes a manipulaciones, encadenados por hash** (§5.8.1) — rendimiento verificable en una categoría criticada habitualmente por el cherry-picking.
+4. **Trae tu propio bróker** — frente al jardín amurallado de eToro.
+
+> **Lectura de amenaza:** Collective2 demuestra que el modelo es viable y legalmente navegable para acciones/opciones de EE. UU. — así que el riesgo no es "no hay mercado", sino entrar en una categoría establecida. La diferenciación descansa en IA + sandbox + confianza verificada, no en el concepto en sí.
+
+---
+
 ## 12. Alcance Sugerido del MVP (v0.1)
 
 1. Auth + **RBAC** con roles Usuario/Diseñador/Admin y un **root admin** inicializado por configuración.
