@@ -1,11 +1,11 @@
 """Drive the chart from the REAL M5 sandbox + M10 ledger, running a REAL bot.
 
 A stored-style `BotDefinition` (SMA-cross) is evaluated each tick by the `SignalEngine`
-(M3/M9); the resulting signals are sized into orders and executed through the real
-`SandboxLedger` (writing fills to the hash-chained `EventLedger`). We stream the actual
-fills, their rationale, and live performance to the client.
-
-Position sizing here is a fixed quantity until M6 (PositionSizer + RiskModel) lands.
+(M3/M9); each signal is sized (M6 `PositionSizer`), checked against portfolio limits
+(`RiskModel`) and hard account guardrails (`GuardrailPolicy`), and only then executed
+through the real `SandboxLedger` (writing fills to the hash-chained `EventLedger`).
+Blocked orders are audited and surfaced — never silently dropped. We stream the actual
+fills, their rationale, live performance, and any blocks to the client.
 """
 
 from __future__ import annotations
@@ -15,8 +15,10 @@ from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Any
 
+from ..config import get_settings
 from ..execution.orders import MarketSnapshot, Order, Side
 from ..execution.sandbox import SandboxLedger
+from ..foundation.audit import AuditLog
 from ..foundation.clock import SystemClock
 from ..foundation.ids import new_id
 from ..foundation.instrument import AssetClass, Instrument
@@ -24,6 +26,9 @@ from ..foundation.uow import UnitOfWork
 from ..ledger.ledger import EventLedger
 from ..ledger.performance import PerformanceCalculator
 from ..marketdata.types import Quote
+from ..risk.guardrails import AccountRisk, GuardrailLimits, GuardrailPolicy
+from ..risk.model import PortfolioState, RiskLimits, RiskModel
+from ..risk.sizing import FixedFractional, PositionSizer, SizingContext
 from ..signals.engine import SignalEngine
 from ..signals.signal import Action, Signal
 from ..strategy.strategy import BotDefinition, StrategyContext
@@ -33,14 +38,23 @@ Send = Callable[[dict[str, Any]], Awaitable[None]]
 
 _SHORT = 9
 _LONG = 21
-_QTY = Decimal(100)
 _SPREAD = Decimal("0.02")
 
 
 class SandboxSession:
     """Runs one live (symbol, sandbox) session, streaming bars/fills/perf via `send`."""
 
-    def __init__(self, uow: UnitOfWork, symbol: str, starting_cash: Decimal) -> None:
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        symbol: str,
+        starting_cash: Decimal,
+        *,
+        sizer: PositionSizer | None = None,
+        risk_model: RiskModel | None = None,
+        guardrails: GuardrailPolicy | None = None,
+        kill_switch: bool | None = None,
+    ) -> None:
         self._uow = uow
         self._symbol = symbol
         self._instrument = Instrument(symbol, AssetClass.EQUITY)
@@ -58,6 +72,27 @@ class SandboxSession:
             self._ledger, self._stream_id, starting_cash=starting_cash, clock=self._clock
         )
         self._calc = PerformanceCalculator()
+        self._audit = AuditLog(uow.session, self._clock)
+
+        settings = get_settings()
+        self._sizer = sizer or FixedFractional(settings.risk_sizing_fraction)
+        self._risk = risk_model or RiskModel(
+            RiskLimits(
+                max_position_pct=settings.risk_max_position_pct,
+                max_options_leverage=settings.risk_max_options_leverage,
+            )
+        )
+        self._guardrails = guardrails or GuardrailPolicy(
+            GuardrailLimits(
+                daily_loss_limit_pct=settings.risk_daily_loss_limit_pct,
+                max_drawdown_pct=settings.risk_max_drawdown_pct,
+            )
+        )
+        self._kill_switch = (
+            settings.risk_kill_switch if kill_switch is None else kill_switch
+        )
+        self._day_start_equity = starting_cash
+        self._peak_equity = starting_cash
 
     def _snapshot_for(self, close: float) -> MarketSnapshot:
         c = Decimal(str(close))
@@ -88,9 +123,25 @@ class SandboxSession:
             await send({"type": "bar", "bar": bar_dict(bar)})
 
             snap = self._snapshot_for(bar.close)
+            equity = self._sandbox.equity(snap)
+            self._peak_equity = max(self._peak_equity, equity)
+
             ctx = StrategyContext(self._instrument, self._closes, position=self._position())
-            for signal in self._engine.run(self._definition, ctx):
-                await self._execute(signal, snap, bar.time, send)
+            signals = self._engine.run(self._definition, ctx)
+            if signals:
+                guard = self._guardrails.enforce(
+                    AccountRisk(
+                        equity=equity,
+                        day_start_equity=self._day_start_equity,
+                        peak_equity=self._peak_equity,
+                        kill_switch=self._kill_switch,
+                    )
+                )
+                for signal in signals:
+                    if guard.halted:
+                        await self._block(signal, bar.time, send, "guardrail", guard.reason)
+                    else:
+                        await self._handle(signal, snap, equity, bar.time, send)
 
             await self._sandbox.mark_to_market(snap)
             await send(await self._perf_msg(snap))
@@ -100,13 +151,59 @@ class SandboxSession:
         positions = self._sandbox.positions()
         return positions[0].quantity if positions else Decimal(0)
 
-    async def _execute(
-        self, signal: Signal, snap: MarketSnapshot, time: int, send: Send
+    async def _handle(
+        self, signal: Signal, snap: MarketSnapshot, equity: Decimal, time: int, send: Send
     ) -> None:
-        """Size a signal into an order (fixed qty until M6) and execute it on the sandbox."""
+        """signal → PositionSizer → Order → RiskModel.check → (if approved) sandbox.submit."""
+        price = snap.quote(self._instrument).mid
+        position = self._position()
+        qty = self._sizer.quantity(
+            signal,
+            SizingContext(self._instrument, price, equity, position, self._closes),
+        )
+        if qty <= 0:
+            return
+
         side = Side.BUY if signal.action is Action.BUY else Side.SELL
-        fill = await self._sandbox.submit(Order(self._instrument, side, _QTY), snap)
+        order = Order(self._instrument, side, qty)
+        portfolio = PortfolioState(
+            equity=equity,
+            positions=self._sandbox.positions(),
+            marks={self._instrument.key: price},
+        )
+        decision = self._risk.check(order, portfolio)
+        if not decision.approved:
+            await self._block(signal, time, send, "risk", decision.reason)
+            return
+
+        fill = await self._sandbox.submit(order, snap)
         await send(self._signal_msg(time, side.value, fill.price, signal))
+
+    async def _block(
+        self, signal: Signal, time: int, send: Send, kind: str, reason: str | None
+    ) -> None:
+        """Audit a rejected order and surface it to the client — never silently dropped."""
+        await self._audit.record(
+            "order_blocked",
+            actor=self._stream_id,
+            payload={
+                "kind": kind,
+                "reason": reason,
+                "symbol": self._symbol,
+                "action": signal.action.value,
+            },
+        )
+        await send(
+            {
+                "type": "blocked",
+                "blocked": {
+                    "time": time,
+                    "kind": kind,
+                    "reason": reason,
+                    "action": signal.action.value,
+                },
+            }
+        )
 
     def _signal_msg(
         self, time: int, side: str, price: Decimal, signal: Signal

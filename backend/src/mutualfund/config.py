@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     equity_commission_per_share: Decimal = Decimal(0)
     option_commission_per_contract: Decimal = Decimal("0.65")
 
+    # Risk & sizing (M6, REQUIREMENTS §5.6) — conservative defaults, all tunable.
+    risk_sizing_fraction: Decimal = Decimal("0.10")  # FixedFractional: % of equity per entry
+    risk_max_position_pct: Decimal = Decimal("0.25")  # max single-name weight
+    risk_max_options_leverage: Decimal = Decimal("1.0")  # options notional / equity
+    risk_daily_loss_limit_pct: Decimal = Decimal("0.05")  # halt below -5% on the day
+    risk_max_drawdown_pct: Decimal = Decimal("0.20")  # halt below -20% from peak
+    risk_kill_switch: bool = False  # global "stop trading" override
+
     # Market data
     marketdata_provider: str = "fake"
     schwab_client_id: str | None = None
