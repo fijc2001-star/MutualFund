@@ -47,6 +47,9 @@ class BotVersion(Base, Entity, TenantScoped):
     universe: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     risk_profile_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     state: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    # The qualification bar this version last cleared (M4) — null until it passes.
+    qualified_policy: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    qualified_policy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     @property
