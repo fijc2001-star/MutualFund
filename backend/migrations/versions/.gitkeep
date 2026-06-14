@@ -1,0 +1,4 @@
+# Alembic revisions live here.
+# Generate the initial migration once deps are installed and a DB is reachable:
+#   alembic revision --autogenerate -m "initial: foundation + iam"
+#   alembic upgrade head
