@@ -49,6 +49,9 @@ The platform earns from **two revenue streams**: (1) the **designer access** pre
 | **Bot subscription fee** | Recurring fee, per user per bot. Set by the bot's creator within Admin-defined min/max. | ✅ per bot (bounded) |
 | **Revenue split on subscriptions** | **Admin/platform-created bot → platform keeps 100%.** **Designer-created bot → platform keeps a configurable % (admin variable); designer receives the remainder.** | ✅ global % for designer bots |
 | **Free bots** | Zero-fee streams (platform-provided starter bots and/or designer free tiers) to drive adoption. | n/a |
+| **Platform tier (freemium)** | A platform-level subscription **separate from bot fees**, monetizing *capabilities*. **Free** tier (free bots, limited sandboxes, possibly delayed signals) vs. paid **Pro** tier (real-time signals, more concurrent subscriptions, full copilot, advanced analytics). Offsets LLM/compute cost and monetizes browsers who don't buy paid bots. | ✅ tier definitions admin-configurable |
+
+> **Note:** The all-access bundle ("Netflix" model) and usage-metered billing are deferred (payout-splitting / metering complexity); revisit later. The freemium tier is **designed-in but likely lands in v1.x**, after the core marketplace ships.
 
 - **Payments & payouts** flow through a marketplace-capable processor (**Stripe Connect** recommended): platform charges subscribers; for designer bots it retains the configured commission and pays out the designer; for platform/admin bots it retains the full subscription.
 
@@ -138,8 +141,11 @@ The agent is the **interface + orchestration + reasoning** layer. All quantitati
 ## 5. Functional Requirements
 
 ### 5.1 Accounts, Roles & Authorization
+- **Authentication: in-house, social-first.** OIDC/OAuth login via **Authlib** (Google first; designed for multiple providers — Apple/Microsoft/GitHub). After the provider callback, the backend issues its **own JWT/session** and manages its lifetime, refresh, revocation, and logout. Email/magic-link fallback only if non-social users are needed.
+- **Account linking:** same identity across providers (matched by verified email) maps to one account, per a defined linking policy.
+- **Do not hand-roll the OAuth protocol** — use Authlib (state/PKCE/token exchange).
 - Signup defaults to **User**. Role upgrade to **Designer** via paid premium; **Admin** granted by Admin/root admin.
-- **Role-based access control (RBAC)** enforced server-side on every request; cumulative privileges.
+- **Role-based access control (RBAC)** owned and enforced **server-side** on every request; cumulative privileges. (Authentication = who you are via OAuth; authorization = what you can do, always in FastAPI.)
 - **Root admin** bootstrapped from configuration (env/secret), not editable via normal UI.
 
 ### 5.2 Brokerage Integration
@@ -166,6 +172,20 @@ The agent is the **interface + orchestration + reasoning** layer. All quantitati
 - Conversational copilot: "explain this signal", "what's my risk today", portfolio narrative ("what moved and why").
 - Notifications on new signals/fills.
 
+#### 5.5.1 Sandbox Fill Model (pluggable)
+
+The sandbox's realism is governed by **four independent, pluggable models** behind interfaces, so each dimension can be swapped or extended later without touching the rest. Each is **admin-configurable**, and the platform ships **deliberately slightly-conservative defaults** (under-promising in simulation protects users when they later go live).
+
+| Dimension | Interface | v1 default | Future extensions (pluggable) |
+|-----------|-----------|-----------|-------------------------------|
+| **Fill price** | `FillPriceModel` | **Cross-the-spread** (buy at ask, sell at bid) | last/mid price, next-bar open, VWAP, etc. |
+| **Slippage** | `SlippageModel` | **Fixed bps** (configurable) | volume/volatility-based, market-impact models |
+| **Commissions/fees** | `CommissionModel` | **Modeled** — equities (configurable, may be $0) + **per-contract options fees** | tiered/broker-specific schedules |
+| **Options pricing** | `OptionsPricingModel` | **Real historical options quotes** (data vendor, see §13) | Black-Scholes / model-based pricing from underlying + IV |
+
+- All four are selected per-environment via config; the chosen models and parameters are **recorded with each fill** in the audit log so any track record is fully reproducible.
+- Options require **mark-to-market between fills** (greeks move continuously); the `OptionsPricingModel` supplies both fill and MTM prices.
+
 ### 5.6 Risk & Position Sizing Engine (deterministic)
 - Per-trade & per-portfolio limits: max position %, sector concentration, max drawdown, options notional/leverage.
 - Volatility-aware sizing (vol targeting / fractional Kelly cap).
@@ -177,10 +197,33 @@ The agent is the **interface + orchestration + reasoning** layer. All quantitati
 - Tax-awareness hook (lot selection, wash-sale flags) — design now, deepen later.
 
 ### 5.8 Backtesting, Performance Tracking & Bot Qualification
-- Backtest framework sharing the **same code path** as sandbox/live (no drift).
+- Backtest framework sharing the **same code path** as sandbox/live (no drift). **The backtest engine is built in the Python `core`** — *not* outsourced to TradingView/Pine Script or any external backtester, since track records must be deterministic, replayable, and fed into the tamper-resistant ledger (§5.8.1). TradingView is used **only for charting** (Lightweight Charts, §8), never as the backtest engine.
 - **Forward/sandbox performance recording** per bot — the basis for marketplace trust; tamper-resistant.
-- **Bot qualification gate:** during the `Evaluation` lifecycle stage, a bot is monitored over an **admin-configurable period** and must clear **admin-configurable thresholds** (e.g., min track-record length, risk-adjusted return floor, max drawdown ceiling, min number of trades) before it can be `Listed` / subscribed to by other users.
+- **Bot qualification gate:** during the `Evaluation` lifecycle stage, a bot is monitored over an **admin-configurable period** and must clear a **qualification policy** before it can be `Listed` / subscribed to by other users.
+- **Pluggable qualification policy:** the gate is a composable set of **`QualificationCriterion`** rules behind an interface — new criteria can be added, removed, or swapped without code changes elsewhere. The policy is **named and versioned**, so the exact bar a given bot passed is always recorded even as the rules evolve. v1 baseline (global defaults, admin-editable, designed to later vary **per risk tier**), bot must pass **all**:
+
+  | Criterion | Guards against | v1 default |
+  |-----------|----------------|-----------|
+  | Min evaluation period | Lucky short streaks | **90 days** live in sandbox |
+  | Min closed trades | Tiny-sample flukes | **≥ 30** |
+  | Risk-adjusted return (Sharpe) | Luck/leverage masquerading as skill | **≥ 1.0** annualized |
+  | Max drawdown ceiling | Blow-up-prone strategies | **≤ 25%** peak-to-trough |
+  | Profitability floor | Net-losing strategies | **Positive net return** after fees/slippage |
+  | Max position concentration | One lucky bet carrying the record | **≤ 30%** of sandbox equity |
+
+- **Continuous enforcement:** criteria are evaluated even after listing; a `Listed` bot that breaches them can be auto-flagged for `Suspended`/`Delisted` (§1.2.1).
 - Listed bots are continuously evaluated; falling below thresholds can trigger `Suspended`/`Delisted` (§1.2.1).
+
+#### 5.8.1 Tamper-Resistant Performance Verification
+
+A bot's track record is the trust backbone of the marketplace and must be **provably untampered**.
+
+- **Append-only event ledger:** every signal, fill, and parameter set is an immutable, append-only record — no UPDATE/DELETE. Performance is **derived by replaying the ledger**, never edited directly. The ledger is the single source of performance truth.
+- **Hash-chaining:** each record carries the cryptographic hash of the previous one. Altering any past entry breaks every subsequent hash, so tampering — by a designer, insider, or admin — is instantly detectable.
+- **Immutable in testing/evaluation:** a bot's **performance ledger recorded during `Evaluation` (testing mode) is immutable**, as are the **bot's parameters**. Performance is bound to the exact parameter set that produced it.
+- **Immutable versioning:** changing a bot's parameters **forks a new bot version** with its own fresh track record; the prior version's history and parameters are frozen. A designer can never "fix" a strategy and keep the old record.
+- **No cherry-picking:** a bot's public record starts at `Evaluation`/`Listed` and cannot be reset; abandoned/delisted bots remain on the designer's history (no spin-up-many-keep-the-winner gaming).
+- **Future hook:** signed daily Merkle roots / external notarization (e.g., public timestamping) for an "even the platform can't backdate" guarantee — designed-for-later.
 
 ### 5.9 Billing, Subscriptions & Payouts
 - Marketplace payments via **Stripe Connect** (recommended): charge subscribers, retain configurable commission, pay out designers.
@@ -203,7 +246,7 @@ The agent is the **interface + orchestration + reasoning** layer. All quantitati
 Common **`Instrument`** model + small interface set so adding an asset class is additive:
 
 - `Instrument` — symbol, asset class, contract specs (multiplier, expiry, strike, tick size).
-- `MarketDataProvider` — quotes/bars/chains per asset class.
+- `MarketDataProvider` — quotes/bars/chains per asset class. **First implementation: ThinkorSwim / Schwab API** (TD Ameritrade's API migrated to the Schwab Developer API; the same integration can later serve as a live `ExecutionVenue`). Fully **swappable** — any other provider (Polygon, Databento, etc.) plugs in behind the interface.
 - `Strategy` — building blocks designers compose into bots; consumes `Instrument` data, emits signals.
 - `RiskModel` — asset-class-aware risk (an option's risk ≠ an equity's).
 - `ExecutionVenue` — where orders go: **`SandboxLedger`** (v1, simulated) or a live **`BrokerAdapter`** (later).
@@ -241,7 +284,7 @@ Common **`Instrument`** model + small interface set so adding an asset class is 
 | **Agent chat UI** | **Vercel AI SDK** | Streaming + tool-call/approval rendering; points at FastAPI. |
 | **Real-time** | **WebSocket** | Signals, quotes, fills, agent tokens. |
 | **Payments** | **Stripe Connect** | Marketplace charges, commission split, designer payouts. |
-| **Auth / tenancy** | FastAPI-issued **JWT** + RBAC (or Clerk/Auth0) | **Multi-tenant**; per-request isolation server-side. |
+| **Auth / tenancy** | **In-house auth** — OIDC/OAuth social login via **Authlib** (Google first, multi-provider), backend-issued **JWT/session**, **RBAC** in FastAPI | **Multi-tenant**; per-request isolation server-side. Social-first removes password risk; **don't hand-roll the OAuth protocol — use Authlib**. Email/magic-link fallback added only if non-social users are needed. |
 | **LLM provider** | **Claude** | Tool-use + reasoning quality. |
 
 ---
@@ -321,13 +364,16 @@ Monorepo via **pnpm + Turborepo**. Split protects the future mobile path: shared
 - [x] **v1 execution** — **per-subscription sandbox** with auto-executed simulated ledger; **live exchange/broker execution is a later stage** (`ExecutionVenue` abstraction).
 - [x] **Designer/bot vetting** — bots pass an **admin-configurable evaluation period + performance thresholds** before being subscribable (lifecycle in §1.2.1).
 - [x] **Existing subscribers** when a designer bot is `Delisted` / premium lapses — **honored to end of their billing cycle, no refunds**; only new subscriptions blocked.
+- [x] Bot **performance verification** — **append-only, hash-chained event ledger** (single source of truth); **immutable evaluation-mode performance + parameters**; **immutable versioning** (param change forks a new version); no cherry-picking. External notarization is a later hook (§5.8.1).
+- [x] **Sandbox fill model** — **four pluggable models** (`FillPriceModel`, `SlippageModel`, `CommissionModel`, `OptionsPricingModel`), admin-configurable, conservative defaults (cross-spread + fixed-bps slippage + modeled commissions + real options quotes); extensible (§5.5.1).
+- [x] **Qualification thresholds** — pluggable, versioned **`QualificationCriterion`** policy; v1 baseline: ≥90 days, ≥30 trades, Sharpe ≥1.0, max DD ≤25%, net positive, ≤30% concentration; admin-editable, designed for per-tier; extensible (§5.8).
+- [x] **Platform subscription tier** — **freemium** Free/Pro (capability-based, admin-configurable); all-access bundle & usage-metering deferred. Designed-in, likely v1.x (§1.3).
+- [x] **Data source** — **ThinkorSwim / Schwab API first** (data now, live execution later), behind a swappable `MarketDataProvider`. Backtest engine built **in-house in Python** (not TradingView/Pine — conflicts with same-code-path + tamper-resistant ledger). *Caveat:* deep historical options data is thin on broker APIs — a vendor (Polygon/Databento) may be needed later for historical options backtesting.
+- [x] **Auth** — **build in-house**, OIDC/OAuth social login via **Authlib** (Google first, multi-provider), backend-issued JWT/session, RBAC in FastAPI; social-first to avoid password risk; email fallback later if needed (§5.1).
 
-**Still open:**
-- [ ] Bot **performance verification** method — how is the sandbox track record made tamper-resistant (e.g., signed, append-only ledger)?
-- [ ] **Sandbox fill model** — how realistic? (fill price assumptions, slippage, commissions, options pricing in simulation.)
-- [ ] **Qualification thresholds** — concrete default metrics & values (min period length, return floor, max drawdown, min trades).
-- [ ] Pricing for **subscribers** beyond per-bot fees (platform-level subscription tier?).
-- [ ] Backtest data source (vendor vs broker-provided history).
-- [ ] Build vs buy for auth (FastAPI JWT vs Clerk/Auth0).
+**Remaining / deferred (not blocking v0.1):**
+- [ ] Concrete **legal review** before real-money launch (§11) — the central pre-launch gate.
+- [ ] Historical **options data vendor** (Polygon/Databento) if/when historical options backtesting is needed.
+- [ ] **Account-linking** policy specifics across OAuth providers.
 
 > **Note:** Designer eligibility is **open to anyone who pays the recurring premium**; quality is controlled at the **bot level** via the evaluation/qualification gate (§1.2.1), not by gatekeeping people.
