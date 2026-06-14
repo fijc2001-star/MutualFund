@@ -1,5 +1,7 @@
 # MutualFund — Agentic Trading-Bot Marketplace
 
+> 📄 Requirements: [English](./REQUIREMENTS.md) · [Español](./REQUIREMENTS.es.md)
+
 A SaaS **marketplace** where members design trading bots and sell their **signal streams** to a
 community. It brings institutional-grade **process** — risk management, portfolio construction, and
 research synthesis — to active retail traders.
