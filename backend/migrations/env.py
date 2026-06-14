@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 # Import model modules so they register on Base.metadata for autogenerate.
 import mutualfund.iam.models  # noqa: F401
+import mutualfund.ledger.models  # noqa: F401
 from mutualfund.config import get_settings
 from mutualfund.foundation import audit  # noqa: F401
 from mutualfund.foundation.db import Base

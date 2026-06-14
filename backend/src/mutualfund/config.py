@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +35,12 @@ class Settings(BaseSettings):
     # Root admin bootstrap
     root_admin_email: str | None = None
     default_tenant_id: str = "00000000000000000000000000000000"
+
+    # Sandbox / fill models (REQUIREMENTS §5.5.1) — conservative defaults, all tunable.
+    sandbox_starting_cash: Decimal = Decimal(100_000)
+    slippage_bps: Decimal = Decimal(5)
+    equity_commission_per_share: Decimal = Decimal(0)
+    option_commission_per_contract: Decimal = Decimal("0.65")
 
     # Market data
     marketdata_provider: str = "fake"
