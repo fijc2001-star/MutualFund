@@ -2,6 +2,7 @@
 
 > 📄 Requirements: [English](./REQUIREMENTS.md) · [Español](./REQUIREMENTS.es.md)
 > 🏗️ Architecture: [English](./ARCHITECTURE.md) · [Español](./ARCHITECTURE.es.md)
+> 🛠️ Implementation plan: [Phase 1 — Foundation, IAM, Market Data](./IMPLEMENTATION_PLAN.md)
 
 A SaaS **marketplace** where members design trading bots and sell their **signal streams** to a
 community. It brings institutional-grade **process** — risk management, portfolio construction, and
