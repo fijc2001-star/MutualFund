@@ -32,6 +32,9 @@ env/
 logs/
 *.sqlite
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 data/cache/
 
 # ---- Claude Code (local settings) ----
