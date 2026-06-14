@@ -355,31 +355,32 @@ Monorepo via **pnpm + Turborepo**. Split protects the future mobile path: shared
 
 ---
 
-## 13. Open Questions
+## 13. Decision Log
 
-**Resolved:**
-- [x] Tech stack — Python/FastAPI + Vite/React/TS web + Expo mobile (later). See §8.
-- [x] LLM provider — **Claude**.
-- [x] Tenancy — **multi-tenant SaaS from day one**.
-- [x] Product shape — **bot marketplace** with User/Designer/Admin roles.
-- [x] Payments — **Stripe Connect** (marketplace model).
-- [x] **Designer premium** — **recurring**.
-- [x] **Revenue model** — recurring designer premium + bot subscriptions; **platform keeps 100% of admin/platform bots and a configurable % of designer bots**.
-- [x] **Subscription lifecycle** — failed payment → lapse (after dunning); voluntary cancel → runs to end of period.
-- [x] **v1 execution** — **per-subscription sandbox** with auto-executed simulated ledger; **live exchange/broker execution is a later stage** (`ExecutionVenue` abstraction).
-- [x] **Designer/bot vetting** — bots pass an **admin-configurable evaluation period + performance thresholds** before being subscribable (lifecycle in §1.2.1).
-- [x] **Existing subscribers** when a designer bot is `Delisted` / premium lapses — **honored to end of their billing cycle, no refunds**; only new subscriptions blocked.
-- [x] Bot **performance verification** — **append-only, hash-chained event ledger** (single source of truth); **immutable evaluation-mode performance + parameters**; **immutable versioning** (param change forks a new version); no cherry-picking. External notarization is a later hook (§5.8.1).
-- [x] **Sandbox fill model** — **four pluggable models** (`FillPriceModel`, `SlippageModel`, `CommissionModel`, `OptionsPricingModel`), admin-configurable, conservative defaults (cross-spread + fixed-bps slippage + modeled commissions + real options quotes); extensible (§5.5.1).
-- [x] **Qualification thresholds** — pluggable, versioned **`QualificationCriterion`** policy; v1 baseline: ≥90 days, ≥30 trades, Sharpe ≥1.0, max DD ≤25%, net positive, ≤30% concentration; admin-editable, designed for per-tier; extensible (§5.8).
-- [x] **Platform subscription tier** — **freemium** Free/Pro (capability-based, admin-configurable); all-access bundle & usage-metering deferred. Designed-in, likely v1.x (§1.3).
-- [x] **Data source** — **ThinkorSwim / Schwab API first** (data now, live execution later), behind a swappable `MarketDataProvider`. *Caveat:* deep historical options data is thin on broker APIs — a vendor (Polygon/Databento) may be needed later for historical options backtesting.
-- [x] **Backtesting & charts (MVP)** — backtest engine **in Python `core`**, accelerated with an **OSS framework** (backtesting.py / VectorBT / Backtrader), evolving to bespoke. **Charts via TradingView Lightweight Charts + free Widgets.** TradingView backtester **not integrable** (no public API) — prototyping only; track records come from in-core engine + sandbox (§5.8).
-- [x] **Auth** — **build in-house**, OIDC/OAuth social login via **Authlib** (Google first, multi-provider), backend-issued JWT/session, RBAC in FastAPI; social-first to avoid password risk; email fallback later if needed (§5.1).
+All decisions below are **locked** and documented in the referenced sections — this is a quick index, not the source of truth.
 
-**Remaining / deferred (not blocking v0.1):**
+| Decision | Choice | Section |
+|----------|--------|---------|
+| Product shape | Two-sided **bot marketplace** (User / Designer / Admin + root admin) | §1, §2 |
+| Business model | **SaaS (Option B)** — users trade own accounts; platform never custodies funds | §2 |
+| Revenue | Recurring **designer premium** + bot subscriptions; platform keeps **100% of admin bots**, **configurable %** of designer bots | §1.3 |
+| Subscription lifecycle | Failed payment → lapse after dunning; cancel → runs to period end; delisted bot → existing subs honored to end of cycle, no refunds | §1.2.1, §1.3 |
+| v1 execution | **Per-subscription sandbox** (auto-executed simulated ledger); live broker/exchange is a later stage via `ExecutionVenue` | §1.5, §5.11 |
+| Sandbox fill model | Four pluggable models (`FillPriceModel`, `SlippageModel`, `CommissionModel`, `OptionsPricingModel`); conservative admin-configurable defaults | §5.5.1 |
+| Real-time visualization | Bot signals + position changes live on **TradingView Lightweight Charts** over WebSocket (primary v0.1 view) | §5.5 |
+| Bot lifecycle & qualification | `Draft → Evaluation → Listed → Suspended/Delisted → Liquidation → Retired`; pluggable, versioned **`QualificationCriterion`** policy (baseline: ≥90d, ≥30 trades, Sharpe ≥1.0, maxDD ≤25%, net+, conc ≤30%) | §1.2.1, §5.8 |
+| Performance verification | Append-only **hash-chained** ledger; immutable evaluation-mode results + parameters; **immutable versioning**; no cherry-picking | §5.8.1 |
+| Backtesting | In-core Python engine, accelerated by an **OSS framework** (backtesting.py / VectorBT / Backtrader); TradingView backtester **not integrable** | §5.8 |
+| Platform tier | **Freemium** Free/Pro (capability-based, admin-configurable); bundle & metering deferred | §1.3 |
+| Data source | **ThinkorSwim / Schwab API** first behind swappable `MarketDataProvider`; options-data vendor possible later | §6 |
+| Auth | **In-house**, OIDC/OAuth social login via **Authlib** (Google first); backend JWT/session; **RBAC in FastAPI** | §5.1 |
+| Tech stack | **Python/FastAPI** backend + **Vite/React/TS** web + **Expo** mobile (later); pnpm/Turborepo monorepo | §8, §9 |
+| Tenancy | **Multi-tenant** from day one | §8 |
+| LLM provider | **Claude** | §8 |
+| Payments | **Stripe Connect** (marketplace) | §8 |
+| Designer eligibility | **Open to anyone who pays the recurring premium**; quality controlled at the **bot level** via the qualification gate, not by gatekeeping people | §1.2.1 |
+
+### Still open / deferred (not blocking v0.1)
 - [ ] Concrete **legal review** before real-money launch (§11) — the central pre-launch gate.
 - [ ] Historical **options data vendor** (Polygon/Databento) if/when historical options backtesting is needed.
 - [ ] **Account-linking** policy specifics across OAuth providers.
-
-> **Note:** Designer eligibility is **open to anyone who pays the recurring premium**; quality is controlled at the **bot level** via the evaluation/qualification gate (§1.2.1), not by gatekeeping people.
