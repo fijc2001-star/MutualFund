@@ -289,7 +289,7 @@ Common **`Instrument`** model + small interface set so adding an asset class is 
 | **Real-time** | **WebSocket** | Signals, quotes, fills, agent tokens. |
 | **Payments** | **Stripe Connect** | Marketplace charges, commission split, designer payouts. |
 | **Auth / tenancy** | **In-house auth** — OIDC/OAuth social login via **Authlib** (Google first, multi-provider), backend-issued **JWT/session**, **RBAC** in FastAPI | **Multi-tenant**; per-request isolation server-side. Social-first removes password risk; **don't hand-roll the OAuth protocol — use Authlib**. Email/magic-link fallback added only if non-social users are needed. |
-| **LLM provider** | **Claude** | Tool-use + reasoning quality. |
+| **LLM provider** | **TBD** | Selected for tool-use + reasoning quality. |
 
 ---
 
@@ -376,7 +376,7 @@ All decisions below are **locked** and documented in the referenced sections —
 | Auth | **In-house**, OIDC/OAuth social login via **Authlib** (Google first); backend JWT/session; **RBAC in FastAPI** | §5.1 |
 | Tech stack | **Python/FastAPI** backend + **Vite/React/TS** web + **Expo** mobile (later); pnpm/Turborepo monorepo | §8, §9 |
 | Tenancy | **Multi-tenant** from day one | §8 |
-| LLM provider | **Claude** | §8 |
+| LLM provider | **TBD** | §8 |
 | Payments | **Stripe Connect** (marketplace) | §8 |
 | Designer eligibility | **Open to anyone who pays the recurring premium**; quality controlled at the **bot level** via the qualification gate, not by gatekeeping people | §1.2.1 |
 

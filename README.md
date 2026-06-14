@@ -38,7 +38,7 @@ numeric critical path.
 - **Backend:** Python + FastAPI — auth, brokers, strategies, risk, agent orchestration. REST + WebSocket, OpenAPI.
 - **Web:** React + TypeScript SPA (Vite).
 - **Mobile (later):** React Native + Expo, sharing `/core`.
-- **LLM:** Claude. **Tenancy:** multi-tenant.
+- **LLM:** provider TBD. **Tenancy:** multi-tenant.
 - **v1 assets:** US equities + options (asset-class-agnostic core).
 
 ## Status

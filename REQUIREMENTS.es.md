@@ -291,7 +291,7 @@ Modelo común **`Instrument`** + un conjunto pequeño de interfaces para que agr
 | **Tiempo real** | **WebSocket** | Señales, cotizaciones, ejecuciones, tokens del agente. |
 | **Pagos** | **Stripe Connect** | Cobros del mercado, reparto de comisión, pagos a diseñadores. |
 | **Auth / multi-inquilino** | **Auth propia** — login social OIDC/OAuth vía **Authlib** (Google primero, multi-proveedor), **JWT/sesión** emitidos por el backend, **RBAC** en FastAPI | **Multi-inquilino**; aislamiento por solicitud en el servidor. Social-primero elimina el riesgo de contraseñas; **no implementar el protocolo OAuth a mano — usar Authlib**. Respaldo email/magic-link solo si se necesitan usuarios sin login social. |
-| **Proveedor de LLM** | **Claude** | Calidad de uso de herramientas + razonamiento. |
+| **Proveedor de LLM** | **Por definir (TBD)** | Elegido por calidad de uso de herramientas + razonamiento. |
 
 ---
 
@@ -378,7 +378,7 @@ Todas las decisiones a continuación están **fijadas** y documentadas en las se
 | Auth | **Propia**, login social OIDC/OAuth vía **Authlib** (Google primero); JWT/sesión en backend; **RBAC en FastAPI** | §5.1 |
 | Stack tecnológico | Backend **Python/FastAPI** + web **Vite/React/TS** + móvil **Expo** (después); monorepo pnpm/Turborepo | §8, §9 |
 | Multi-inquilino | **Multi-inquilino** desde el día uno | §8 |
-| Proveedor de LLM | **Claude** | §8 |
+| Proveedor de LLM | **Por definir (TBD)** | §8 |
 | Pagos | **Stripe Connect** (mercado) | §8 |
 | Elegibilidad de diseñador | **Abierta a cualquiera que pague la prima recurrente**; la calidad se controla a **nivel de bot** vía la puerta de calificación, no restringiendo personas | §1.2.1 |
 
