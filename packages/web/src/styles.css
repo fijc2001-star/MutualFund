@@ -1,0 +1,155 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0a0d13;
+  color: #d1d4dc;
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.subtitle {
+  color: #8b93a7;
+  margin: 4px 0 20px;
+  font-size: 14px;
+}
+
+.symbol-picker {
+  display: flex;
+  gap: 8px;
+}
+
+.symbol-picker button {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.symbol-picker button.active {
+  background: #2962ff;
+  border-color: #2962ff;
+  color: white;
+}
+
+.chart-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+}
+
+.chart-main {
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1c2230;
+}
+
+.chart-header .symbol {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.status {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.status-connecting { color: #f0b429; }
+.status-live { color: #26a69a; }
+.status-closed { color: #ef5350; }
+
+.chart-canvas {
+  height: 460px;
+  width: 100%;
+}
+
+.signal-feed {
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.signal-feed h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8b93a7;
+}
+
+.signal-feed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sig {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #131824;
+  font-size: 13px;
+}
+
+.sig-side {
+  font-weight: 700;
+}
+.sig-buy .sig-side { color: #26a69a; }
+.sig-sell .sig-side { color: #ef5350; }
+
+.sig-price {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sig-reason {
+  grid-column: 1 / -1;
+  color: #8b93a7;
+  font-size: 12px;
+}
+
+.muted {
+  color: #5a6479;
+  font-size: 13px;
+}
