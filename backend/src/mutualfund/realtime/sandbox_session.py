@@ -1,11 +1,13 @@
-"""Drive the chart from the REAL M5 sandbox + M10 ledger, running a REAL bot.
+"""Drive the chart from the REAL M5 sandbox + M10 ledger, running a REAL, persisted bot.
 
-A stored-style `BotDefinition` (SMA-cross) is evaluated each tick by the `SignalEngine`
-(M3/M9); each signal is sized (M6 `PositionSizer`), checked against portfolio limits
-(`RiskModel`) and hard account guardrails (`GuardrailPolicy`), and only then executed
-through the real `SandboxLedger` (writing fills to the hash-chained `EventLedger`).
-Blocked orders are audited and surfaced — never silently dropped. We stream the actual
-fills, their rationale, live performance, and any blocks to the client.
+This is Phase 3's full integrated flow end to end: a persisted `BotVersion` (SMA-cross) in
+EVALUATION is run each tick by the `SignalEngine` (M3/M9); each signal is sized (M6
+`PositionSizer`), checked against portfolio limits (`RiskModel`) and hard account guardrails
+(`GuardrailPolicy`), and only then executed through the real `SandboxLedger` (writing fills
+to the hash-chained `EventLedger`). When the session ends, the `PerformanceCalculator` (M10)
+replays the ledger and the `QualificationService` (M4) gates the bot's lifecycle — promoting
+it to LISTED or delisting it. Fills, rationale, live performance, blocks, and lifecycle state
+are all streamed to the client.
 """
 
 from __future__ import annotations
@@ -25,17 +27,27 @@ from ..foundation.instrument import AssetClass, Instrument
 from ..foundation.uow import UnitOfWork
 from ..ledger.ledger import EventLedger
 from ..ledger.performance import PerformanceCalculator
+from ..lifecycle.lifecycle import BotLifecycle, BotState
+from ..lifecycle.qualification import (
+    PolicyResult,
+    QualificationInput,
+    QualificationPolicy,
+    baseline_policy,
+)
+from ..lifecycle.service import QualificationService
 from ..marketdata.types import Quote
 from ..risk.guardrails import AccountRisk, GuardrailLimits, GuardrailPolicy
 from ..risk.model import PortfolioState, RiskLimits, RiskModel
 from ..risk.sizing import FixedFractional, PositionSizer, SizingContext
 from ..signals.engine import SignalEngine
 from ..signals.signal import Action, Signal
-from ..strategy.strategy import BotDefinition, StrategyContext
+from ..strategy.models import BotRegistry, BotVersion
+from ..strategy.strategy import StrategyContext
 from .demo import DemoFeed, bar_dict
 
 Send = Callable[[dict[str, Any]], Awaitable[None]]
 
+_SECONDS_PER_DAY = 86_400
 _SHORT = 9
 _LONG = 21
 _SPREAD = Decimal("0.02")
@@ -54,6 +66,7 @@ class SandboxSession:
         risk_model: RiskModel | None = None,
         guardrails: GuardrailPolicy | None = None,
         kill_switch: bool | None = None,
+        policy: QualificationPolicy | None = None,
     ) -> None:
         self._uow = uow
         self._symbol = symbol
@@ -62,9 +75,6 @@ class SandboxSession:
         self._starting_cash = starting_cash
         self._feed = DemoFeed(symbol)
         self._engine = SignalEngine()
-        self._definition = BotDefinition(
-            strategy_id="sma_cross", params={"fast": _SHORT, "slow": _LONG}
-        )
         self._closes: list[float] = []
         self._clock = SystemClock()
         self._ledger = EventLedger(uow.session, self._clock)
@@ -73,6 +83,17 @@ class SandboxSession:
         )
         self._calc = PerformanceCalculator()
         self._audit = AuditLog(uow.session, self._clock)
+
+        # M3/M4 — a persisted bot we run and then qualify (created in run()).
+        self._bots = BotRegistry(uow.session, clock=self._clock)
+        self._lifecycle = BotLifecycle(uow.session, clock=self._clock)
+        self._qualification = QualificationService(
+            uow.session, policy=policy or baseline_policy(), lifecycle=self._lifecycle,
+            clock=self._clock,
+        )
+        self._version: BotVersion | None = None
+        self._first_time: int | None = None
+        self._last_time: int | None = None
 
         settings = get_settings()
         self._sizer = sizer or FixedFractional(settings.risk_sizing_fraction)
@@ -112,6 +133,9 @@ class SandboxSession:
             }
         )
 
+        version = await self._start_evaluation()
+        await send(self._lifecycle_msg())
+
         tick = 0
         while max_ticks is None or tick < max_ticks:
             if interval > 0:
@@ -120,6 +144,9 @@ class SandboxSession:
 
             bar = self._feed.next_bar()
             self._closes.append(bar.close)
+            if self._first_time is None:
+                self._first_time = bar.time
+            self._last_time = bar.time
             await send({"type": "bar", "bar": bar_dict(bar)})
 
             snap = self._snapshot_for(bar.close)
@@ -127,7 +154,7 @@ class SandboxSession:
             self._peak_equity = max(self._peak_equity, equity)
 
             ctx = StrategyContext(self._instrument, self._closes, position=self._position())
-            signals = self._engine.run(self._definition, ctx)
+            signals = self._engine.run(version.definition, ctx)
             if signals:
                 guard = self._guardrails.enforce(
                     AccountRisk(
@@ -146,6 +173,55 @@ class SandboxSession:
             await self._sandbox.mark_to_market(snap)
             await send(await self._perf_msg(snap))
             await self._uow.commit()
+
+        # End of run: replay the ledger into a PerformanceRecord and gate the lifecycle.
+        result = await self._qualify()
+        await send(self._lifecycle_msg(result))
+        await self._uow.commit()
+
+    async def _start_evaluation(self) -> BotVersion:
+        """Create the persisted bot, publish its version, and move it into EVALUATION."""
+        bot = await self._bots.create_bot(name=f"SMA demo {self._symbol}", owner_id="demo")
+        version = await self._bots.publish(
+            bot,
+            strategy_id="sma_cross",
+            params={"fast": _SHORT, "slow": _LONG},
+            universe=[self._symbol],
+        )
+        await self._lifecycle.transition(
+            version, BotState.EVALUATION, reason="sandbox evaluation started"
+        )
+        self._version = version
+        return version
+
+    async def _qualify(self) -> PolicyResult:
+        events = await self._ledger.replay(self._stream_id)
+        record = self._calc.from_events(events, self._starting_cash)
+        assert self._version is not None
+        return await self._qualification.evaluate(
+            self._version, QualificationInput(record, evaluation_days=self._eval_days())
+        )
+
+    def _eval_days(self) -> int:
+        if self._first_time is None or self._last_time is None:
+            return 0
+        return (self._last_time - self._first_time) // _SECONDS_PER_DAY
+
+    def _lifecycle_msg(self, result: PolicyResult | None = None) -> dict[str, Any]:
+        assert self._version is not None
+        lifecycle: dict[str, Any] = {
+            "bot_id": self._version.bot_id,
+            "version": self._version.version,
+            "state": self._version.state,
+        }
+        if result is not None:
+            lifecycle["qualification"] = {
+                "policy": result.policy_name,
+                "policy_version": result.policy_version,
+                "passed": result.passed,
+                "failures": [c.name for c in result.failures],
+            }
+        return {"type": "lifecycle", "lifecycle": lifecycle}
 
     def _position(self) -> Decimal:
         positions = self._sandbox.positions()
