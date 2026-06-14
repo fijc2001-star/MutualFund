@@ -23,8 +23,9 @@ export function App() {
         </div>
       </header>
       <p className="subtitle">
-        Fake bot signals streamed from the backend over WebSocket, plotted on
-        TradingView Lightweight Charts.
+        A live SMA-crossover bot trading in the <strong>real sandbox</strong> (M5) — every
+        fill is recorded on the hash-chained ledger (M10); fills and live P&amp;L stream over
+        WebSocket onto TradingView Lightweight Charts.
       </p>
       {/* key forces a clean remount (new WS + fresh chart) on symbol change */}
       <SignalChart key={symbol} symbol={symbol} />

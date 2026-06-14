@@ -13,7 +13,12 @@ import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ..config import get_settings
+from ..foundation.ids import TenantId
+from ..foundation.tenant import TenantContext
+from ..foundation.uow import UnitOfWork
 from .demo import DemoFeed, bar_dict, signal_dict
+from .sandbox_session import SandboxSession
 
 router = APIRouter(tags=["realtime"])
 
@@ -49,3 +54,28 @@ async def demo_signals(websocket: WebSocket) -> None:
     except (asyncio.CancelledError, RuntimeError):
         with contextlib.suppress(RuntimeError):
             await websocket.close()
+
+
+@router.websocket("/ws/sandbox")
+async def sandbox_stream(websocket: WebSocket) -> None:
+    """Live chart driven by the REAL M5 sandbox + M10 ledger (SMA-cross demo strategy)."""
+    await websocket.accept()
+    symbol = websocket.query_params.get("symbol", "AAPL")
+    try:
+        interval = float(websocket.query_params.get("interval", "1.0"))
+    except ValueError:
+        interval = 1.0
+
+    settings = get_settings()
+    token = TenantContext.set(TenantId(settings.default_tenant_id))
+    try:
+        async with UnitOfWork() as uow:
+            session = SandboxSession(uow, symbol, settings.sandbox_starting_cash)
+            await session.run(websocket.send_json, interval=interval)
+    except WebSocketDisconnect:
+        return
+    except (asyncio.CancelledError, RuntimeError):
+        with contextlib.suppress(RuntimeError):
+            await websocket.close()
+    finally:
+        TenantContext.reset(token)

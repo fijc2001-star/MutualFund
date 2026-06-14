@@ -10,9 +10,9 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { DemoMessage, DemoSignal } from "./types";
+import type { DemoMessage, DemoSignal, SandboxPerf } from "./types";
 
-const WS_URL = "ws://localhost:8000/ws/demo";
+const WS_URL = "ws://localhost:8000/ws/sandbox";
 
 type Status = "connecting" | "live" | "closed";
 type Side = "buy" | "sell";
@@ -57,6 +57,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
 
   const [status, setStatus] = useState<Status>("connecting");
   const [signals, setSignals] = useState<DemoSignal[]>([]);
+  const [perf, setPerf] = useState<SandboxPerf | null>(null);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
   const [showSma9, setShowSma9] = useState(true);
@@ -142,6 +143,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   useEffect(() => {
     const ws = new WebSocket(`${WS_URL}?symbol=${encodeURIComponent(symbol)}`);
     setStatus("connecting");
+    setPerf(null);
     ws.onopen = () => setStatus("live");
     ws.onclose = () => setStatus("closed");
     ws.onerror = () => setStatus("closed");
@@ -187,6 +189,8 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         ].slice(-100);
         applyMarkers();
         setSignals((prev) => [s, ...prev].slice(0, 12));
+      } else if (msg.type === "perf") {
+        setPerf(msg.perf);
       }
     };
 
@@ -204,6 +208,18 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       <div className="chart-main">
         <div className="chart-header">
           <span className="symbol">{symbol}</span>
+          {perf && (
+            <span className="perf">
+              <span className={perf.net_pnl >= 0 ? "pnl up" : "pnl down"}>
+                {perf.net_pnl >= 0 ? "+" : ""}
+                {perf.net_pnl.toFixed(2)} ({perf.return_pct.toFixed(2)}%)
+              </span>
+              <span className="perf-meta">
+                equity ${perf.equity.toFixed(0)} · pos {perf.position} · trades{" "}
+                {perf.num_trades} · maxDD {perf.max_drawdown_pct.toFixed(1)}%
+              </span>
+            </span>
+          )}
           <span className={`status status-${status}`}>● {status}</span>
         </div>
 

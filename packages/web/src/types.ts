@@ -15,7 +15,18 @@ export interface DemoSignal {
   reason: string;
 }
 
+export interface SandboxPerf {
+  equity: number;
+  cash: number;
+  position: number;
+  net_pnl: number;
+  return_pct: number;
+  max_drawdown_pct: number;
+  num_trades: number;
+}
+
 export type DemoMessage =
   | { type: "snapshot"; symbol: string; bars: DemoBar[] }
   | { type: "bar"; bar: DemoBar }
-  | { type: "signal"; signal: DemoSignal };
+  | { type: "signal"; signal: DemoSignal }
+  | { type: "perf"; perf: SandboxPerf };

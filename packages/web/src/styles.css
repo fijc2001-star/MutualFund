@@ -84,6 +84,27 @@ body {
   font-size: 16px;
 }
 
+.perf {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-left: auto;
+  margin-right: 14px;
+}
+
+.perf .pnl {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.perf .pnl.up { color: #26a69a; }
+.perf .pnl.down { color: #ef5350; }
+
+.perf .perf-meta {
+  color: #8b93a7;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .status {
   font-size: 12px;
   text-transform: uppercase;
