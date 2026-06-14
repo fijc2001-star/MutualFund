@@ -43,7 +43,7 @@
 | M5 | **Ejecución / Sandbox** | `ExecutionVenue` (sandbox ahora, bróker después); sandbox por suscripción; modelos de ejecución enchufables | `ExecutionVenue`, `SandboxLedger`, `BrokerAdapter`, `FillPriceModel`, `SlippageModel`, `CommissionModel`, `OptionsPricingModel` | M2 |
 | M6 | **Riesgo y Dimensionamiento** | Límites por operación/portafolio, sizing por volatilidad, barreras estrictas | `RiskModel`, `PositionSizer`, `GuardrailPolicy` | M2 |
 | M7 | **Construcción de Portafolio** | Optimizador con restricciones de riesgo | `PortfolioOptimizer` | M6 |
-| M8 | **Backtesting** | Motor respaldado por framework OSS que comparte el camino de código en vivo | `BacktestEngine`, `DataFeed` | M2, M3, M5, M6 |
+| M8 | **Backtesting** | Motor respaldado por framework OSS que comparte el camino de código en vivo. **Histórico, solo in-house** — herramienta de I+D del diseñador, *no* la fuente del historial del mercado (ver nota de flujo §4). | `BacktestEngine`, `DataFeed` | M2, M3, M5, M6 |
 | M9 | **Señales** | Correr bots → producir flujos de señales clasificadas y explicadas | `SignalEngine`, `SignalStream`, `Signal` | M3, M5, M6 |
 | M10 | **Rendimiento y Ledger** | Ledger solo-anexar y **encadenado por hash**; métricas de rendimiento; verificación | `EventLedger`, `PerformanceCalculator`, `PerformanceRecord` | Fundamento |
 | M11 | **Suscripciones y Facturación** | Suscripciones, Stripe Connect, pagos, reparto de comisión, dunning, ciclo de vida | `BillingProvider`, `SubscriptionService`, `PayoutService` | M1 |
@@ -259,6 +259,11 @@ class AgentOrchestrator(Protocol):
 
 **Pago al diseñador:**
 `BillingProvider.charge_subscription` (M11) → si es bot de diseñador, `split_and_payout` con el `commission_pct` del admin desde `ConfigStore` (M14) → auditoría (X).
+
+**Backtest vs. forward-test vs. graficación (división de responsabilidad):**
+- **Backtest (histórico)** → `BacktestEngine` (M8), in-house, solo I+D del diseñador — **no** verificado y **no** se vende.
+- **Forward-test (en vivo)** → `SandboxLedger` (M5) corriendo una `BotVersion` en `EVALUATION`/`LISTED`, registrado en `EventLedger` (M10) → **este es el historial verificado y vendible** que alimenta `QualificationPolicy` (M4).
+- **Graficación** → TradingView Lightweight Charts en `/packages/web`, alimentado con señales/ejecuciones por WebSocket (M16); *solo superficie de visualización* — nunca Pine Script, nunca ejecución de TradingView.com.
 
 ---
 

@@ -203,6 +203,11 @@ The sandbox's realism is governed by **four independent, pluggable models** behi
   - **TradingView backtester is *not* used:** it has **no public API** to run Pine Script backtests or extract results programmatically — it cannot feed a verifiable, multi-tenant marketplace. Designers may prototype in TradingView manually, but **platform track records come only from the in-core engine + sandbox.**
   - TradingView is leveraged for **charting only** — Lightweight Charts + free embeddable Widgets (§8).
 - **Forward/sandbox performance recording** per bot — the basis for marketplace trust; tamper-resistant.
+
+> **Backtest vs. Forward-test vs. Charting — the clean split (avoid confusion):**
+> - **Backtest (historical):** in-house Python engine only. A designer's private R&D / design-time tool. Easy to overfit, so it is **not** the basis for the marketplace track record.
+> - **Forward-test (live, going forward):** the **per-subscription sandbox during `Evaluation`/`Listed`** — run by *our* engine, so it is **verifiable and feeds the tamper-resistant ledger + qualification gate** (§5.8.1, §1.2.1). **This forward/live performance is what we sell**, because forward results can't be cherry-picked like backtests.
+> - **Charting:** **TradingView Lightweight Charts** (the library, rendered *inside our app* with our own data) is the visualization surface for signals and position open/close — *not* TradingView.com and *not* Pine Script. Selling happens via the marketplace + Stripe, never via TradingView.
 - **Bot qualification gate:** during the `Evaluation` lifecycle stage, a bot is monitored over an **admin-configurable period** and must clear a **qualification policy** before it can be `Listed` / subscribed to by other users.
 - **Pluggable qualification policy:** the gate is a composable set of **`QualificationCriterion`** rules behind an interface — new criteria can be added, removed, or swapped without code changes elsewhere. The policy is **named and versioned**, so the exact bar a given bot passed is always recorded even as the rules evolve. v1 baseline (global defaults, admin-editable, designed to later vary **per risk tier**), bot must pass **all**:
 

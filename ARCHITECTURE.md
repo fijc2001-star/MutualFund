@@ -41,7 +41,7 @@
 | M5 | **Execution / Sandbox** | `ExecutionVenue` (sandbox now, broker later); per-subscription sandbox; pluggable fill models | `ExecutionVenue`, `SandboxLedger`, `BrokerAdapter`, `FillPriceModel`, `SlippageModel`, `CommissionModel`, `OptionsPricingModel` | M2 |
 | M6 | **Risk & Sizing** | Per-trade/portfolio limits, vol sizing, hard guardrails | `RiskModel`, `PositionSizer`, `GuardrailPolicy` | M2 |
 | M7 | **Portfolio Construction** | Optimizer with risk constraints | `PortfolioOptimizer` | M6 |
-| M8 | **Backtesting** | OSS-framework-backed engine sharing the live code path | `BacktestEngine`, `DataFeed` | M2, M3, M5, M6 |
+| M8 | **Backtesting** | OSS-framework-backed engine sharing the live code path. **Historical, in-house only** — a designer R&D tool, *not* the marketplace track-record source (see flow note §4). | `BacktestEngine`, `DataFeed` | M2, M3, M5, M6 |
 | M9 | **Signals** | Run bots → produce ranked, explained signal streams | `SignalEngine`, `SignalStream`, `Signal` | M3, M5, M6 |
 | M10 | **Performance & Ledger** | Append-only, **hash-chained** ledger; performance metrics; verification | `EventLedger`, `PerformanceCalculator`, `PerformanceRecord` | Foundation |
 | M11 | **Subscriptions & Billing** | Subscriptions, Stripe Connect, payouts, commission split, dunning, lifecycle | `BillingProvider`, `SubscriptionService`, `PayoutService` | M1 |
@@ -257,6 +257,11 @@ class AgentOrchestrator(Protocol):
 
 **Designer payout:**
 `BillingProvider.charge_subscription` (M11) → if designer bot, `split_and_payout` with admin `commission_pct` from `ConfigStore` (M14) → audit (X).
+
+**Backtest vs. forward-test vs. charting (responsibility split):**
+- **Backtest (historical)** → `BacktestEngine` (M8), in-house, designer R&D only — **not** verified and **not** sold.
+- **Forward-test (live)** → `SandboxLedger` (M5) running a `BotVersion` in `EVALUATION`/`LISTED`, recorded in `EventLedger` (M10) → **this is the verified, sellable track record** feeding `QualificationPolicy` (M4).
+- **Charting** → TradingView Lightweight Charts in `/packages/web`, fed signals/fills over WebSocket (M16); a *display surface only* — never Pine Script, never TradingView.com execution.
 
 ---
 
