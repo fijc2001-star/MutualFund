@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -12,7 +12,7 @@ def test_system_clock_is_tz_aware() -> None:
 
 
 def test_fixed_clock_returns_set_moment() -> None:
-    moment = datetime(2026, 6, 14, tzinfo=timezone.utc)
+    moment = datetime(2026, 6, 14, tzinfo=UTC)
     assert FixedClock(moment).now() == moment
 
 

@@ -8,12 +8,11 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from mutualfund.config import get_settings
-from mutualfund.foundation.db import Base
-
 # Import model modules so they register on Base.metadata for autogenerate.
 import mutualfund.iam.models  # noqa: F401
+from mutualfund.config import get_settings
 from mutualfund.foundation import audit  # noqa: F401
+from mutualfund.foundation.db import Base
 
 config = context.config
 if config.config_file_name is not None:

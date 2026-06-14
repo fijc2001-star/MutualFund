@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import httpx
@@ -88,7 +88,7 @@ class SchwabProvider:
             bid=Decimal(str(payload["bidPrice"])),
             ask=Decimal(str(payload["askPrice"])),
             last=Decimal(str(payload["lastPrice"])),
-            ts=datetime.now(timezone.utc),
+            ts=datetime.now(UTC),
         )
 
     async def bars(
@@ -111,7 +111,7 @@ class SchwabProvider:
         return [
             Bar(
                 instrument=instrument,
-                ts=datetime.fromtimestamp(c["datetime"] / 1000, tz=timezone.utc),
+                ts=datetime.fromtimestamp(c["datetime"] / 1000, tz=UTC),
                 open=Decimal(str(c["open"])),
                 high=Decimal(str(c["high"])),
                 low=Decimal(str(c["low"])),
@@ -140,7 +140,7 @@ class SchwabProvider:
                 for strike_str, entries in strikes.items():
                     for entry in entries:
                         exp_dt = datetime.fromtimestamp(
-                            entry["expirationDate"] / 1000, tz=timezone.utc
+                            entry["expirationDate"] / 1000, tz=UTC
                         ).date()
                         ins = Instrument(
                             symbol=underlying,

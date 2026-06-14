@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from ...foundation.instrument import AssetClass, Instrument
@@ -44,7 +44,7 @@ class FakeProvider:
             bid=last - half,
             ask=last + half,
             last=last,
-            ts=datetime.now(timezone.utc),
+            ts=datetime.now(UTC),
         )
 
     async def bars(
@@ -79,7 +79,7 @@ class FakeProvider:
     async def option_chain(
         self, underlying: str, expiry: date | None = None
     ) -> OptionChain:
-        exp = expiry or (datetime.now(timezone.utc).date() + timedelta(days=30))
+        exp = expiry or (datetime.now(UTC).date() + timedelta(days=30))
         spot = _seed_price(underlying)
         contracts: list[OptionContract] = []
         for offset in (Decimal(-10), Decimal(0), Decimal(10)):
@@ -90,7 +90,7 @@ class FakeProvider:
                     asset_class=AssetClass.OPTION,
                     expiry=exp,
                     strike=strike,
-                    option_type=opt_type,  # type: ignore[arg-type]
+                    option_type=opt_type,
                     multiplier=Decimal(100),
                 )
                 mid = Decimal(5) + (abs(offset) / Decimal(10))

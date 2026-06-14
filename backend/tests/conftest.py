@@ -10,7 +10,7 @@ import os
 import uuid
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-os.environ.setdefault("JWT_SECRET", "test-secret-key")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-at-least-32-bytes-long!!")
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DEFAULT_TENANT_ID", "00000000000000000000000000000000")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "root@example.com")
@@ -21,14 +21,14 @@ from collections.abc import AsyncIterator  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 
-from mutualfund.foundation.db import create_all  # noqa: E402
+from mutualfund.foundation.db import reset_all  # noqa: E402
 from mutualfund.foundation.ids import TenantId  # noqa: E402
 from mutualfund.foundation.tenant import TenantContext  # noqa: E402
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def _ensure_schema() -> AsyncIterator[None]:
-    await create_all()  # checkfirst=True → safe to call per test
+    await reset_all()  # clean DB per test → full isolation
     yield
 
 

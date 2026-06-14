@@ -12,7 +12,9 @@ from mutualfund.iam.service import IdentityService
 from mutualfund.iam.tokens import verify_access_token
 
 
-def _info(sub: str = "g-1", email: str = "alice@example.com", verified: bool = True) -> OAuthUserInfo:
+def _info(
+    sub: str = "g-1", email: str = "alice@example.com", verified: bool = True
+) -> OAuthUserInfo:
     return OAuthUserInfo(
         provider="fake",
         subject=sub,

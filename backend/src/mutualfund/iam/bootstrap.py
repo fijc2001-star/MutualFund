@@ -5,7 +5,7 @@ The root admin is created from env/secret at startup, never via the UI. Idempote
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +37,7 @@ async def ensure_root_admin(session: AsyncSession) -> User | None:
             display_name="Root Admin",
             role=Role.ROOT_ADMIN.value,
             status="active",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         session.add(user)
     elif user.role != Role.ROOT_ADMIN.value:

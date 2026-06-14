@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -13,7 +13,7 @@ from mutualfund.foundation.uow import UnitOfWork
 
 
 async def test_record_appends_with_fixed_clock(tenant_ctx: TenantId) -> None:
-    clock = FixedClock(datetime(2026, 1, 1, tzinfo=timezone.utc))
+    clock = FixedClock(datetime(2026, 1, 1, tzinfo=UTC))
     async with UnitOfWork() as uow:
         log = AuditLog(uow.session, clock)
         evt = await log.record("user.login", actor="u1", payload={"ok": True})

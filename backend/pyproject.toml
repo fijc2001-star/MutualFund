@@ -42,6 +42,10 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
+# UP042: allow (str, Enum) — broad compatibility, intentional.
+# UP046: keep Generic[T] form rather than PEP 695 type params for clarity.
+# B008: FastAPI relies on callables (Query/Depends) in argument defaults.
+ignore = ["UP042", "UP046", "B008"]
 
 [tool.mypy]
 python_version = "3.12"

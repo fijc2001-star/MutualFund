@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from mutualfund.foundation.instrument import AssetClass, Instrument
@@ -19,7 +19,7 @@ async def test_quote_spread_and_mid() -> None:
 
 async def test_bars_are_well_formed() -> None:
     provider = FakeProvider()
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(days=5)
     bars = await provider.bars(
         Instrument("AAPL", AssetClass.EQUITY), TimeFrame.D1, start, end

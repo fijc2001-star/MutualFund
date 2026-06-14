@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 
 from fastapi import APIRouter, Depends, Query
@@ -70,7 +70,7 @@ async def bars(
     days: int = Query(30, ge=1, le=365),
     provider: MarketDataProvider = ProviderDep,
 ) -> list[BarResponse]:
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(days=days)
     rows = await provider.bars(
         Instrument(symbol=symbol, asset_class=AssetClass.EQUITY), timeframe, start, end

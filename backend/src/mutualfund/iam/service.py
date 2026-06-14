@@ -6,7 +6,7 @@ Account linking: a verified email maps to one user per tenant (REQUIREMENTS §5.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ class TokenPair:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class IdentityService:
@@ -125,7 +125,11 @@ class IdentityService:
         )
         if record is None or record.revoked:
             raise PermissionError("Refresh token is invalid or revoked")
-        if record.expires_at <= _now():
+        # SQLite returns naive datetimes; coerce to aware UTC for comparison.
+        expires_at = record.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= _now():
             raise PermissionError("Refresh token expired")
         # Rotate: revoke the old, issue a new pair.
         record.revoked = True

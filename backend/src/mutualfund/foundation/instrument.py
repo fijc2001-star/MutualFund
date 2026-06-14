@@ -49,5 +49,8 @@ class Instrument:
         """Stable string key (used by the instrument catalog)."""
         if self.asset_class is AssetClass.OPTION:
             assert self.expiry is not None and self.strike is not None
-            return f"{self.symbol}:{self.asset_class.value}:{self.expiry.isoformat()}:{self.strike}:{self.option_type}"
+            return (
+                f"{self.symbol}:{self.asset_class.value}:{self.expiry.isoformat()}"
+                f":{self.strike}:{self.option_type}"
+            )
         return f"{self.symbol}:{self.asset_class.value}"

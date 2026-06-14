@@ -75,11 +75,22 @@ def configure_engine(engine: AsyncEngine) -> None:
     _sessionmaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
-async def create_all() -> None:
-    """Create tables from metadata. Dev/test convenience; prod uses Alembic."""
+def _register_models() -> None:
     # Import models so they register on Base.metadata before create_all.
     from .. import iam  # noqa: F401
     from . import audit  # noqa: F401
 
+
+async def create_all() -> None:
+    """Create tables from metadata. Dev/test convenience; prod uses Alembic."""
+    _register_models()
     async with get_engine().begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def reset_all() -> None:
+    """Drop and recreate all tables — used for per-test isolation."""
+    _register_models()
+    async with get_engine().begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
