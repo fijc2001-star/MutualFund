@@ -2,7 +2,7 @@
 
 > 📄 Requirements: [English](./REQUIREMENTS.md) · [Español](./REQUIREMENTS.es.md)
 > 🏗️ Architecture: [English](./ARCHITECTURE.md) · [Español](./ARCHITECTURE.es.md)
-> 🛠️ Implementation plan: [Phase 1 — Foundation, IAM, Market Data](./IMPLEMENTATION_PLAN.md)
+> 🛠️ Implementation plans: [Phase 1 — Foundation, IAM, Market Data](./IMPLEMENTATION_PLAN.md) · [Phase 2 — M10 Ledger + M5 Sandbox](./IMPLEMENTATION_PLAN_M5_M10.md)
 > 💻 Backend (Phase 1 implemented): [`backend/`](./backend/README.md) — FastAPI; `cd backend && uv sync --extra dev && uv run uvicorn mutualfund.main:app --reload`
 > 📈 Web prototype: [`packages/web/`](./packages/web/) — live signal chart on TradingView Lightweight Charts; `cd packages/web && npm install && npm run dev` (needs the backend running)
 
