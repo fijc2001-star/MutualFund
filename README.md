@@ -1,7 +1,13 @@
-# MutualFund — Agentic Trading Copilot
+# MutualFund — Agentic Trading-Bot Marketplace
 
-An AI trading copilot that brings institutional-grade **process** — risk management, portfolio
-construction, and research synthesis — to active retail traders, delivered as SaaS.
+A SaaS **marketplace** where members design trading bots and sell their **signal streams** to a
+community. It brings institutional-grade **process** — risk management, portfolio construction, and
+research synthesis — to active retail traders.
+
+- **Users** subscribe to free or paid bot signal streams.
+- **Designers** (a premium role) design, publish, and monetize bots; the platform takes a
+  configurable commission.
+- **Admins** (with a configurable root admin) run the platform.
 
 Users keep their own brokerage accounts; the app **reasons, proposes, and (on approval) executes**.
 It is a copilot, not autopilot.

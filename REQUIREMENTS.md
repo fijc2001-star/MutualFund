@@ -1,145 +1,254 @@
-# Mutual_Fund — Agentic Trading Copilot
+# MutualFund — Agentic Trading-Bot Marketplace
 
-> **One-liner:** An AI trading copilot that brings institutional-grade *process* — risk management, portfolio construction, and research synthesis — to active retail traders, delivered as SaaS. Users keep their own brokerage accounts; the app reasons, proposes, and (on approval) executes.
+> **One-liner:** A SaaS marketplace where members design trading bots and sell their **signal streams** to a community. Users subscribe to free or paid bots; designers monetize their strategies; the platform takes a configurable cut. Institutional-grade *process* — risk management, research synthesis, plain-English reasoning — made accessible to the masses.
+>
+> Users keep their **own brokerage accounts**. The platform never custodies funds. Bots emit signals; users act on them (with approval) in their own accounts. Copilot, not autopilot.
 
 ---
 
-## 1. Product Decisions (locked)
+## 1. Platform Model & Roles (the heart of the product)
+
+This is a **two-sided marketplace**: bot **designers** on the supply side, signal **subscribers** on the demand side, with the **platform** intermediating and taking a fee.
+
+### 1.1 Roles
+
+| Role | Capabilities | How they're created |
+|------|-------------|---------------------|
+| **User** | Browse the bot marketplace. Subscribe to **free** bot signal streams at no cost, or subscribe to a **designer's paid** bot for a recurring fee. Connect own brokerage; act on signals (approve-to-execute). Manage subscriptions & billing. | Default role on signup. |
+| **Designer** | Everything a User can do **plus**: design, backtest, publish, and version bots; price bot subscriptions; view earnings & subscriber analytics; receive payouts (minus platform commission). | A User **upgrades by paying a premium** (the "designer premium"). |
+| **Admin** | Full platform access: manage users/roles, moderate bots, set global config (commission %, designer premium, limits), view all analytics, suspend bots/accounts, handle disputes/refunds. | Granted by an existing Admin / root admin. |
+| **Root Admin** | A single **configurable** super-admin with ultimate authority (can create/revoke Admins, change any global setting, emergency kill-switch). Bootstrapped from config at deploy time. | Set via platform configuration (env/secret), not the UI. |
+
+> Roles are **cumulative**: Designer ⊃ User capabilities; Admin ⊃ everything. A user can hold the highest role they qualify for.
+
+### 1.2 Bots & Signal Streams
+
+- A **Bot** is a published, versioned strategy that emits a **signal stream** (ranked, explained trade signals — entries, exits, sizing guidance).
+- A **Subscription** links a User to a Bot's stream. Subscriptions are **free** or **paid** (recurring fee within platform-configured bounds).
+- **On subscribe, the system auto-provisions a per-subscription sandbox** (see §1.5): an isolated paper-trading ledger that automatically plays the bot's trades so the subscriber sees a live simulation tailored to their own subscription start date.
+- Users also receive signals + rationale in-app and via notification. **Live execution into a real brokerage/exchange is a later stage** (§1.5).
+
+### 1.2.1 Bot Lifecycle
+
+`Draft` → `Evaluation` → `Listed` → (`Suspended` / `Delisted`) → `Liquidation` → `Retired`
+
+- **Draft:** designer builds, configures, and backtests; not visible to others.
+- **Evaluation (probation):** bot runs live in sandbox and is **monitored over an admin-configurable period**; must clear **admin-configurable performance thresholds** (e.g., min track-record length, risk-adjusted return floor, max drawdown ceiling). Not yet subscribable by others.
+- **Listed:** passed evaluation — appears in the marketplace and is subscribable. Performance keeps recording.
+- **Suspended / Delisted:** falls below thresholds, violates policy, or designer premium lapses → **removed from *new* subscriptions**. **Existing subscribers are honored to the end of their current billing cycle (no refunds, no early cutoff)**, after which the subscription does not renew. The bot enters **Liquidation**.
+- **Liquidation (wind-down):** no new subscriptions; existing subscriber sandboxes run only to the end of each subscriber's billing cycle. When a subscriber's cycle ends, **that subscriber's sandbox ceases to exist** — open simulated positions are liquidated/closed and the sandbox (ledger + positions) is torn down (subject to audit-log retention, §5.11).
+- **Retired:** once the last subscriber cycle has ended and all sandboxes are torn down, the bot is fully retired.
+
+### 1.3 Monetization (all rates configurable by Admin)
+
+The platform earns from **two revenue streams**: (1) the **designer access** premium, and (2) **bot subscriptions**.
+
+| Lever | Description | Configurable? |
+|-------|-------------|---------------|
+| **Designer premium** | **Recurring** fee a User pays to hold the Designer role. | ✅ global |
+| **Bot subscription fee** | Recurring fee, per user per bot. Set by the bot's creator within Admin-defined min/max. | ✅ per bot (bounded) |
+| **Revenue split on subscriptions** | **Admin/platform-created bot → platform keeps 100%.** **Designer-created bot → platform keeps a configurable % (admin variable); designer receives the remainder.** | ✅ global % for designer bots |
+| **Free bots** | Zero-fee streams (platform-provided starter bots and/or designer free tiers) to drive adoption. | n/a |
+
+- **Payments & payouts** flow through a marketplace-capable processor (**Stripe Connect** recommended): platform charges subscribers; for designer bots it retains the configured commission and pays out the designer; for platform/admin bots it retains the full subscription.
+
+**Subscription lifecycle (applies to designer premium AND bot subscriptions):**
+- **Involuntary stop (payment fails / card declines):** after dunning retries, access **lapses** — designer premium lapse suspends publishing/earning; bot-subscription lapse stops the signal stream.
+- **Voluntary cancellation:** access **remains in effect until the end of the current paid period**, then does not renew.
+- **Designer premium lapse / bot delisting → their bots' existing subscribers** are **honored to the end of each subscriber's current billing cycle (no refunds)**; only *new* subscriptions are blocked.
+
+### 1.4 Trust & discovery (marketplace essentials)
+
+- **Verified performance:** every bot shows transparent, tamper-resistant track record — backtest *and* forward/live signal performance, clearly labeled. No cherry-picking.
+- **Marketplace discovery:** browse/search/rank bots by strategy type, asset class, risk profile, live performance, subscriber count, rating.
+- **Moderation:** Admins review/suspend bots; designers can't retroactively edit history.
+
+### 1.5 Execution Stages (sandbox now, live later)
+
+The platform is built around an **`ExecutionVenue`** abstraction so the same bot signals can target a simulated ledger today and a real market later — without rewrites.
+
+**Stage 1 — Per-subscription sandbox (v1):**
+- On each subscription, auto-provision an **isolated sandbox** for the (user, bot) pair with its **own ledger**.
+- The bot's trades **execute automatically** into that sandbox; the subscriber watches a live simulation seeded from their subscription start.
+- **Each user has their own trade queue, position ledger, and historical record** per subscription — fully isolated from other users and from the designer's own run.
+- This doubles as the trust/verification substrate: a bot's listed track record is its sandbox performance.
+- **Teardown:** a subscriber's sandbox lives for the life of the subscription. When the subscription ends — including when a bot is in **Liquidation** (§1.2.1) and the subscriber's billing cycle lapses — the sandbox's open positions are liquidated and the sandbox (ledger + positions) **ceases to exist**, retained only as needed for the audit log.
+
+**Stage 2 — Live exchange/broker execution (later):**
+- The system is **designed to integrate with real exchanges/brokers** to connect a bot to a live market.
+- Implemented as additional `ExecutionVenue` / `BrokerAdapter` implementations; the marketplace, sandbox, roles, and billing layers are untouched.
+- Live execution reintroduces explicit **human-in-the-loop approval** and the hard risk guardrails before any real order is placed (gated behind legal sign-off, §11).
+
+---
+
+## 2. Product Decisions (locked)
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Business model** | **Option B — SaaS, not a managed fund** | Users connect *their own* brokerage accounts. We never custody funds. Avoids becoming a regulated fund; ships with a small team. |
+| **Business model** | **Bot-marketplace SaaS (Option B)** | Two-sided market; users trade their own accounts; platform never custodies funds. |
+| **Roles** | **User / Designer / Admin (+ configurable Root Admin)** | Designer role gated by a premium; Admin fully privileged. |
+| **Revenue** | (1) **Recurring designer premium** + (2) **bot subscriptions** — platform keeps **100%** of admin/platform bots and a **configurable %** of designer bots | Admin-tunable. |
 | **Asset classes (v1)** | **US equities + options** | Deepest data, broadest broker API support. |
-| **Asset classes (design goal)** | **Asset-class-agnostic core** | Architecture must add futures, crypto, forex, etc. without rewrites. |
-| **Target user** | **Active trader wanting an AI copilot** | Not "set-and-forget." Wants speed, rationale, and control — copilot, not autopilot. |
-| **Autonomy level (v1)** | **Human-in-the-loop** | Agent proposes → user approves → app executes. Architected so full-auto is "remove the approval gate" later. |
+| **Asset classes (design goal)** | **Asset-class-agnostic core** | Add futures, crypto, forex without rewrites. |
+| **Target user** | **Active traders** (subscribers) + **strategy creators** (designers) | Two-sided. |
+| **Autonomy (v1)** | **Auto-simulated in a per-user sandbox** | On subscribe, each user gets an isolated paper-trading sandbox + ledger that **auto-executes** the bot's trades for simulation. **Live exchange execution is a designed-for-later stage.** |
+| **Bot qualification** | **Evaluation period + thresholds** | A new bot must be monitored over an **admin-configurable period** and clear **performance thresholds** before other users may subscribe. |
 
 ---
 
-## 2. What We Sell (and what we do NOT promise)
+## 3. What We Sell (and what we do NOT promise)
 
-- **We sell:** institutional-grade *process and access* — disciplined risk controls, portfolio construction, research synthesis, and plain-English reasoning, at a fraction of institutional cost.
-- **We do NOT promise:** specific returns or "beating the market." Performance claims are a legal and credibility trap. The defensible value is **better process, less emotion, faster research** — not guaranteed alpha.
+- **We sell:** a marketplace for institutional-grade *process and access* — disciplined risk controls, portfolio construction, research synthesis, transparent track records, and plain-English reasoning, at a fraction of institutional cost.
+- **We do NOT promise:** specific returns or "beating the market." Neither the platform nor designers may guarantee performance. The defensible value is **better process, transparency, and access** — not guaranteed alpha.
 
 ---
 
-## 3. Core Architectural Principle
+## 4. Core Architectural Principle
 
 > **The LLM reasons and communicates. Deterministic code decides the numbers.**
 
-The agent is the **interface + orchestration + reasoning** layer. All quantitative decisions (risk sizing, optimization, backtests, options greeks, P&L) run in **deterministic, testable engines** that the agent *calls as tools*. This keeps math auditable, repeatable, and safe — and keeps the LLM doing what it's good at: synthesis and explanation.
+The agent is the **interface + orchestration + reasoning** layer. All quantitative decisions (risk sizing, optimization, backtests, options greeks, P&L, performance attribution) run in **deterministic, testable engines** that the agent *calls as tools*. Keeps math auditable, repeatable, and safe.
 
-> **Note:** the agent orchestration layer and *all* engines below run in the **Python backend**. The web/mobile clients are thin presentation layers — no trading, strategy, risk, or broker logic ever runs in the frontend.
+> **Everything runs in the Python backend.** The web/mobile clients are thin presentation layers — no trading, strategy, risk, broker, billing, or role logic ever runs in the frontend.
 
 ```
-        ┌─────────────────────────────────────────────┐
-        │                 User (active trader)         │
-        └───────────────┬─────────────────────────────┘
-                        │  chat / approve / configure
-        ┌───────────────▼─────────────────────────────┐
-        │            AGENT ORCHESTRATION LAYER          │
-        │   (LLM: plans, explains, calls tools)         │
-        │   - intent → portfolio policy                 │
-        │   - "why this trade" narration                │
-        │   - news/filings synthesis                    │
-        └───┬───────┬───────┬───────┬───────┬───────────┘
-            │       │       │       │       │   (tool calls)
-   ┌────────▼─┐ ┌───▼────┐ ┌▼──────┐ ┌▼─────┐ ┌▼──────────┐
-   │ Market   │ │ Risk & │ │Portfolio│ │Strat-│ │ Execution │
-   │ Data     │ │ Sizing │ │ Optimizer│ │egy / │ │ (broker   │
-   │ Service  │ │ Engine │ │          │ │Signal│ │ adapters) │
-   └────┬─────┘ └───┬────┘ └────┬────┘ └──┬───┘ └─────┬─────┘
-        │           │           │         │           │
-   ┌────▼───────────▼───────────▼─────────▼───────────▼─────┐
-   │   ASSET-CLASS ABSTRACTION (Instrument interface)        │
-   │   Equity | Option | (Future | Crypto | FX ...)          │
-   └────────────────────────────────────────────────────────┘
+        ┌───────────────────────────────────────────────────────┐
+        │   User (subscriber)   Designer (creator)   Admin        │
+        └───────┬───────────────────┬──────────────────┬─────────┘
+                │  subscribe/act     │ design/publish   │ configure/moderate
+        ┌───────▼────────────────────▼──────────────────▼─────────┐
+        │                   PLATFORM (Python / FastAPI)             │
+        │  AuthZ & Roles │ Marketplace │ Subscriptions │ Billing &  │
+        │  (RBAC)        │ & Discovery │ & Payouts      │ Commission │
+        ├───────────────────────────────────────────────────────────┤
+        │              AGENT ORCHESTRATION (LLM, tool-calling)       │
+        ├──────┬─────────┬──────────┬──────────┬─────────┬──────────┤
+        │Market│ Risk &  │ Portfolio│ Bot /    │ Backtest│ Execution│
+        │ Data │ Sizing  │ Optimizer│ Strategy │ & Perf  │ (broker  │
+        │      │ Engine  │          │ Engine   │ Tracking│ adapters)│
+        └───┬──┴────┬────┴────┬─────┴────┬─────┴────┬────┴────┬─────┘
+        ┌───▼───────▼─────────▼──────────▼──────────▼─────────▼─────┐
+        │   ASSET-CLASS ABSTRACTION (Instrument interface)          │
+        │   Equity | Option | (Future | Crypto | FX ...)            │
+        └──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Functional Requirements
+## 5. Functional Requirements
 
-### 4.1 Account & Broker Integration
-- Connect user's own brokerage via API (**v1: Alpaca** for equities/options; design a **`BrokerAdapter` interface** so Interactive Brokers, Tradier, etc. plug in).
-- Read: positions, balances, buying power, order status.
-- Write: place / modify / cancel orders (only after explicit user approval in v1).
-- **Paper-trading mode is first-class** — must be the default for onboarding, demos, and backtest-to-live parity.
+### 5.1 Accounts, Roles & Authorization
+- Signup defaults to **User**. Role upgrade to **Designer** via paid premium; **Admin** granted by Admin/root admin.
+- **Role-based access control (RBAC)** enforced server-side on every request; cumulative privileges.
+- **Root admin** bootstrapped from configuration (env/secret), not editable via normal UI.
 
-### 4.2 Agent Copilot
-- Conversational interface: "what's my risk today?", "find me momentum setups in semis", "should I roll this call?"
-- Every trade proposal includes a **structured rationale**: thesis, signals fired, risk metrics, position size logic, and what would invalidate it.
-- Synthesizes news, earnings, and filings into a thesis with sources cited.
-- Daily / on-demand portfolio narrative: "what moved and why."
+### 5.2 Brokerage Integration
+- Connect user's own brokerage via API (**v1: Alpaca**; `BrokerAdapter` interface for IBKR, Tradier, etc.).
+- Read positions/balances/buying power/orders; place/modify/cancel **only after explicit user approval** (v1).
+- **Paper-trading is first-class** and the onboarding default.
 
-### 4.3 Strategy & Signal Engine
-- Pluggable strategies (**`Strategy` interface**): momentum, mean-reversion, factor screens, options income (covered calls, spreads) to start.
-- Strategies emit **ranked, explained signals** — never silent orders.
-- Backtesting framework with the **same code path** as live (no logic drift between sim and real).
+### 5.3 Marketplace & Discovery
+- Browse/search/filter/rank bots by asset class, strategy type, risk, **live performance**, subscribers, rating.
+- Bot detail page: description, strategy summary, **verified backtest + live track record**, fee, designer profile.
+- Subscribe / unsubscribe; manage active subscriptions.
 
-### 4.4 Risk & Position Sizing Engine (deterministic)
-- Per-trade and per-portfolio limits: max position %, sector concentration, max drawdown, max options notional/leverage.
-- Volatility-aware sizing (e.g., volatility targeting / fractional Kelly cap).
-- Options-specific risk: greeks aggregation, assignment risk, expiry exposure.
-- **Hard guardrails** that the agent cannot override (kill-switch, daily loss limit).
+### 5.4 Bot Design (Designer role)
+- Create, configure, **backtest**, publish, and **version** bots.
+- Define which `Strategy` building blocks the bot uses, parameters, asset universe, risk profile.
+- Set subscription price (within Admin bounds); free tier optional.
+- Earnings dashboard: subscribers, revenue, payouts, commission deducted.
+- Published bot history is **immutable** (no retroactive performance editing).
 
-### 4.5 Portfolio Construction (deterministic)
-- Optimizer: mean-variance / risk-parity options, with constraints from the risk engine.
-- Tax-awareness hook (e.g., lot selection, wash-sale flags) — design now, deepen later.
+### 5.5 Signal Streams, Sandbox Simulation & Copilot
+- Subscribed bots deliver **ranked, explained signals**: thesis, signals fired, risk metrics, sizing logic, invalidation conditions.
+- **Per-subscription sandbox:** on subscribe, auto-provision an isolated paper-trading ledger for the (user, bot) pair that **auto-executes** the bot's trades. Each user has their own **trade queue, positions, ledger, and historical record**, isolated per subscription.
+- Subscriber dashboards: live simulated P&L, open positions, trade history, and performance vs. the bot's headline track record.
+- Conversational copilot: "explain this signal", "what's my risk today", portfolio narrative ("what moved and why").
+- Notifications on new signals/fills.
 
-### 4.6 Execution
-- Smart order handling (limit logic, slippage awareness) abstracted behind `BrokerAdapter`.
-- Full audit log: every proposal, approval, and fill is recorded with the rationale snapshot.
+### 5.6 Risk & Position Sizing Engine (deterministic)
+- Per-trade & per-portfolio limits: max position %, sector concentration, max drawdown, options notional/leverage.
+- Volatility-aware sizing (vol targeting / fractional Kelly cap).
+- Options risk: greeks aggregation, assignment risk, expiry exposure.
+- **Hard guardrails** the agent/bot cannot override (kill-switch, daily loss limit). Apply to each user's own account.
+
+### 5.7 Portfolio Construction (deterministic)
+- Optimizer (mean-variance / risk-parity) with risk-engine constraints.
+- Tax-awareness hook (lot selection, wash-sale flags) — design now, deepen later.
+
+### 5.8 Backtesting, Performance Tracking & Bot Qualification
+- Backtest framework sharing the **same code path** as sandbox/live (no drift).
+- **Forward/sandbox performance recording** per bot — the basis for marketplace trust; tamper-resistant.
+- **Bot qualification gate:** during the `Evaluation` lifecycle stage, a bot is monitored over an **admin-configurable period** and must clear **admin-configurable thresholds** (e.g., min track-record length, risk-adjusted return floor, max drawdown ceiling, min number of trades) before it can be `Listed` / subscribed to by other users.
+- Listed bots are continuously evaluated; falling below thresholds can trigger `Suspended`/`Delisted` (§1.2.1).
+
+### 5.9 Billing, Subscriptions & Payouts
+- Marketplace payments via **Stripe Connect** (recommended): charge subscribers, retain configurable commission, pay out designers.
+- Designer premium billing.
+- Admin configures commission %, designer premium, fee bounds.
+- Invoices, refunds, dispute handling, dunning.
+
+### 5.10 Admin Console
+- Manage users/roles, moderate/suspend bots & accounts, set global config, view platform-wide analytics, handle disputes/refunds, emergency kill-switch.
+
+### 5.11 Execution & Audit
+- **`ExecutionVenue` abstraction:** Stage 1 = **sandbox ledger** (auto-execute, simulated); Stage 2 = **live broker/exchange** (`BrokerAdapter`, approval-gated) — same signal path, swappable venue.
+- Smart order handling behind `BrokerAdapter` for the live stage.
+- **Full audit log:** every signal, sandbox/real fill, approval, subscription, and payout recorded with rationale/state snapshot.
 
 ---
 
-## 5. The Asset-Class Abstraction (the key extensibility bet)
+## 6. The Asset-Class Abstraction (key extensibility bet)
 
-Everything trades through a common **`Instrument`** model and a small set of interfaces so adding an asset class is additive, not invasive:
+Common **`Instrument`** model + small interface set so adding an asset class is additive:
 
 - `Instrument` — symbol, asset class, contract specs (multiplier, expiry, strike, tick size).
 - `MarketDataProvider` — quotes/bars/chains per asset class.
-- `Strategy` — consumes `Instrument` data, emits signals.
+- `Strategy` — building blocks designers compose into bots; consumes `Instrument` data, emits signals.
 - `RiskModel` — asset-class-aware risk (an option's risk ≠ an equity's).
-- `BrokerAdapter` — venue/broker-specific order placement.
+- `ExecutionVenue` — where orders go: **`SandboxLedger`** (v1, simulated) or a live **`BrokerAdapter`** (later).
+- `BrokerAdapter` — venue/broker/exchange-specific live order placement (a kind of `ExecutionVenue`).
 
-> Adding **futures** or **crypto** later = implement these interfaces for the new class + a broker adapter. The agent, risk framework, and UI are untouched.
+> Adding **futures** or **crypto** later = implement these interfaces + an execution venue. Marketplace, roles, billing, agent, sandbox, and UI are untouched.
 
 ---
 
-## 6. Non-Functional Requirements
+## 7. Non-Functional Requirements
 
-- **Auditability:** every automated decision is logged with inputs, rationale, and outcome. This is both a trust feature and a compliance necessity.
-- **Determinism where it counts:** risk/optimization/backtest math is reproducible and unit-tested; the LLM is never in the numeric critical path.
+- **Auditability:** every automated decision and money movement logged with inputs, rationale, outcome.
+- **Determinism where it counts:** risk/optimization/backtest/performance math reproducible and unit-tested; LLM never in the numeric or money critical path.
+- **Trust & integrity:** performance records tamper-resistant; published bot history immutable.
 - **Safety-first defaults:** paper mode default, conservative limits, explicit approval, global kill-switch.
-- **Latency:** copilot responses interactive; signal generation can be batch/near-real-time (active trading, not HFT — we are not competing on microseconds).
-- **Data lineage:** cited sources for any research the agent surfaces.
+- **Multi-tenant isolation:** strict per-tenant/per-user data isolation enforced server-side.
+- **Latency:** copilot interactive; signal generation batch/near-real-time (not HFT).
+- **Data lineage:** cited sources for surfaced research.
 
 ---
 
-## 7. Tech Stack (locked)
+## 8. Tech Stack (locked)
 
 | Layer | Choice | Notes |
 |-------|--------|-------|
-| **Backend** | **Python + FastAPI** | Single source of truth: auth, brokers, strategies, risk, agent orchestration. Exposes REST/JSON + WebSocket, documented via OpenAPI. |
-| **Frontend (web)** | **React + TypeScript SPA via Vite** | Pure client, no server layer — gives clean frontend/backend separation. No SSR (irrelevant behind login). |
-| **Mobile (later)** | **React Native + Expo** | Shares logic with web via the `core` package; UI is rebuilt (logic shared, presentation rebuilt). |
-| **Charts (price)** | **TradingView Lightweight Charts** | Web. Industry default for candlestick/OHLC; free (MIT). |
-| **Charts (analytics)** | Recharts / visx | Allocation, drawdown, greeks. |
-| **Tables** | **TanStack Table** (+ virtualization) | Positions/orders grids. |
+| **Backend** | **Python + FastAPI** | Single source of truth: auth/RBAC, marketplace, billing, brokers, strategies, risk, agent orchestration. REST/JSON + WebSocket, OpenAPI. |
+| **Frontend (web)** | **React + TypeScript SPA via Vite** | Pure client, clean FE/BE separation. No SSR (behind login). |
+| **Mobile (later)** | **React Native + Expo** | Shares logic with web via `core`; UI rebuilt. |
+| **Charts (price)** | **TradingView Lightweight Charts** | Web. Free (MIT). |
+| **Charts (analytics)** | Recharts / visx | Performance, allocation, drawdown, greeks. |
+| **Tables** | **TanStack Table** (+ virtualization) | Marketplace lists, positions, orders. |
 | **Server state / fetching** | **TanStack Query** | Works web + RN. |
 | **Client state** | **Zustand** | Works web + RN. |
 | **Web UI kit** | **shadcn/ui + Tailwind** | Web only; mobile uses NativeWind. |
-| **Agent chat UI** | **Vercel AI SDK** | Streaming + tool-call/approval rendering; points at the FastAPI streaming endpoint. |
-| **Real-time** | **WebSocket** | Live quotes, fills, agent token streaming. |
-| **Auth / tenancy** | FastAPI-issued **JWT** (or Clerk/Auth0) | **Multi-tenant**; per-request isolation enforced server-side. |
+| **Agent chat UI** | **Vercel AI SDK** | Streaming + tool-call/approval rendering; points at FastAPI. |
+| **Real-time** | **WebSocket** | Signals, quotes, fills, agent tokens. |
+| **Payments** | **Stripe Connect** | Marketplace charges, commission split, designer payouts. |
+| **Auth / tenancy** | FastAPI-issued **JWT** + RBAC (or Clerk/Auth0) | **Multi-tenant**; per-request isolation server-side. |
 | **LLM provider** | **Claude** | Tool-use + reasoning quality. |
 
 ---
 
-## 8. Repository Structure (monorepo)
+## 9. Repository Structure (monorepo)
 
-Monorepo via **pnpm + Turborepo**. The split protects the future mobile path: web and mobile share framework-agnostic logic, not UI.
+Monorepo via **pnpm + Turborepo**. Split protects the future mobile path: shared logic, not shared UI.
 
 ```
 /packages
@@ -147,60 +256,78 @@ Monorepo via **pnpm + Turborepo**. The split protects the future mobile path: we
               (NO DOM / NO browser APIs — shared by web AND mobile)
   /web       ← Vite + React + shadcn/ui            (v1)
   /mobile    ← React Native + Expo                 (later; imports /core)
-/backend     ← Python + FastAPI (quant + agent core)
+/backend     ← Python + FastAPI (platform + quant + agent core)
 ```
 
 **Architectural rules:**
-- Zero financial/trading logic in any frontend. All strategy, risk, and broker logic lives in the Python backend.
-- The frontend is a presentation client only.
+- Zero financial/trading/billing/role logic in any frontend; all of it in the Python backend.
+- Frontend is a presentation client only.
 - **Logic shared, presentation rebuilt** — mobile reuses `/core`, never web UI components.
-- **No shared-UI frameworks for now** (no Tamagui/Solito). Accept separate web/native UIs to avoid early complexity; revisit only if mobile becomes the primary surface.
+- **No shared-UI frameworks for now** (no Tamagui/Solito); revisit only if mobile becomes primary.
 
 ---
 
-## 9. Frontend ⟷ Backend Contract
+## 10. Frontend ⟷ Backend Contract
 
-- **REST/JSON** for request/response (positions, orders, config, account).
-- **WebSocket** for streaming: live quotes, fills, and agent token streaming.
-- **OpenAPI**-generated typed clients consumed by `/packages/core`, so the frontend stays in sync with the backend automatically.
-- Broker credentials and secrets live **only** in the backend, never sent to clients.
+- **REST/JSON** for request/response (marketplace, subscriptions, positions, orders, config, billing).
+- **WebSocket** for streaming: live signals, quotes, fills, agent tokens.
+- **OpenAPI**-generated typed clients consumed by `/packages/core`.
+- Broker credentials, payment secrets, and role logic live **only** in the backend, never sent to clients.
 
 ---
 
-## 10. Compliance & Legal (must resolve before going live — not before building)
+## 11. Compliance & Legal (must resolve before going live — not before building)
 
-> ⚠️ **Open item — requires a securities lawyer before real-money launch.**
+> ⚠️ **Open item — requires a securities lawyer before real-money launch. The marketplace model raises the stakes versus a single-user tool.**
 
-- Providing personalized, for-a-fee trade recommendations may classify the app as an **investment adviser** even though users hold their own funds (Option B does **not** automatically exempt us).
-- **No performance guarantees** in any marketing or UI copy.
-- Required disclaimers, risk disclosures, and ToS.
+- **Designers selling trade signals for a fee may be acting as unregistered investment advisers** — and the platform may bear liability for facilitating it. This is the central legal question and must be assessed early.
+- **No performance guarantees** by platform or designers in any marketing or UI copy.
+- Marketplace requires: ToS for users *and* designers, risk disclosures, designer agreements, payout/tax handling (e.g., 1099s for US designers), refund/dispute policy.
+- **KYC/AML** likely required for designer payouts (Stripe Connect handles much of this).
 - Data/brokerage API terms compliance.
-- **Build + paper-trade freely now; gate real-money execution behind legal sign-off.**
+- **Build + paper-trade freely now; gate real-money execution and paid subscriptions behind legal sign-off.**
 
 ---
 
-## 11. Suggested MVP Scope (v0.1)
+## 12. Suggested MVP Scope (v0.1)
 
-1. Alpaca paper-trading connection (equities + options).
-2. `Instrument` + `BrokerAdapter` + `MarketDataProvider` abstractions in place.
-3. One or two equity strategies + one options-income strategy emitting explained signals.
-4. Deterministic risk/sizing engine with hard guardrails.
-5. Agent copilot: chat, trade proposals with rationale, approve-to-execute, daily narrative.
-6. Backtest harness sharing the live code path.
-7. Full audit log.
+1. Auth + **RBAC** with User/Designer/Admin roles and a config-bootstrapped **root admin**.
+2. Market data + `Instrument` + `MarketDataProvider` + `ExecutionVenue` abstractions; **`SandboxLedger`** as the v1 execution venue.
+3. **Bot design** (Designer): compose strategies, backtest, publish, version. 1–2 equity strategies + 1 options-income strategy as building blocks.
+4. **Bot lifecycle + qualification gate**: Draft → Evaluation (admin-configurable period + thresholds) → Listed.
+5. **Marketplace**: browse/subscribe to free bots; bot detail with verified track record.
+6. **Per-subscription sandbox**: auto-provisioned isolated ledger that auto-executes the bot; subscriber dashboard (simulated P&L, positions, history).
+7. **Signal streams + copilot**: explained signals, sandbox fills, daily narrative.
+8. Deterministic risk/sizing engine with hard guardrails.
+9. **Billing skeleton**: Stripe Connect integration for paid subscriptions, configurable commission, designer premium, payouts. *(Can run in test mode for v0.1.)*
+10. **Admin console**: manage roles, moderate bots, set commission/premium/qualification thresholds, kill-switch.
+11. Full audit log.
 
-**Explicitly out of scope for v0.1:** full autonomy, non-Alpaca brokers, futures/crypto/FX (interfaces only), tax optimization depth, mobile app.
+**Out of scope for v0.1:** live exchange/broker execution, full autonomy, futures/crypto/FX (interfaces only), tax-optimization depth, mobile app, advanced ratings/social features.
 
 ---
 
-## 12. Open Questions
+## 13. Open Questions
 
 **Resolved:**
-- [x] Tech stack — Python/FastAPI backend + Vite/React/TS web SPA + Expo (mobile, later). See §7.
+- [x] Tech stack — Python/FastAPI + Vite/React/TS web + Expo mobile (later). See §8.
 - [x] LLM provider — **Claude**.
 - [x] Tenancy — **multi-tenant SaaS from day one**.
+- [x] Product shape — **bot marketplace** with User/Designer/Admin roles.
+- [x] Payments — **Stripe Connect** (marketplace model).
+- [x] **Designer premium** — **recurring**.
+- [x] **Revenue model** — recurring designer premium + bot subscriptions; **platform keeps 100% of admin/platform bots and a configurable % of designer bots**.
+- [x] **Subscription lifecycle** — failed payment → lapse (after dunning); voluntary cancel → runs to end of period.
+- [x] **v1 execution** — **per-subscription sandbox** with auto-executed simulated ledger; **live exchange/broker execution is a later stage** (`ExecutionVenue` abstraction).
+- [x] **Designer/bot vetting** — bots pass an **admin-configurable evaluation period + performance thresholds** before being subscribable (lifecycle in §1.2.1).
+- [x] **Existing subscribers** when a designer bot is `Delisted` / premium lapses — **honored to end of their billing cycle, no refunds**; only new subscriptions blocked.
 
 **Still open:**
-- [ ] Pricing: flat subscription vs tiered by features/usage.
+- [ ] Bot **performance verification** method — how is the sandbox track record made tamper-resistant (e.g., signed, append-only ledger)?
+- [ ] **Sandbox fill model** — how realistic? (fill price assumptions, slippage, commissions, options pricing in simulation.)
+- [ ] **Qualification thresholds** — concrete default metrics & values (min period length, return floor, max drawdown, min trades).
+- [ ] Pricing for **subscribers** beyond per-bot fees (platform-level subscription tier?).
 - [ ] Backtest data source (vendor vs broker-provided history).
-- [ ] Build vs buy for auth (FastAPI-issued JWT vs Clerk/Auth0).
+- [ ] Build vs buy for auth (FastAPI JWT vs Clerk/Auth0).
+
+> **Note:** Designer eligibility is **open to anyone who pays the recurring premium**; quality is controlled at the **bot level** via the evaluation/qualification gate (§1.2.1), not by gatekeeping people.
