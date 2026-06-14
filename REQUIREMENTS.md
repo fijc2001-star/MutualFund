@@ -169,6 +169,7 @@ The agent is the **interface + orchestration + reasoning** layer. All quantitati
 - Subscribed bots deliver **ranked, explained signals**: thesis, signals fired, risk metrics, sizing logic, invalidation conditions.
 - **Per-subscription sandbox:** on subscribe, auto-provision an isolated paper-trading ledger for the (user, bot) pair that **auto-executes** the bot's trades. Each user has their own **trade queue, positions, ledger, and historical record**, isolated per subscription.
 - Subscriber dashboards: live simulated P&L, open positions, trade history, and performance vs. the bot's headline track record.
+- **Real-time signal/position chart (MVP focus):** the bot's generated signals and sandbox position changes render as **live annotations on a TradingView Lightweight Charts** view — price action with buy/sell markers (▲/▼), entry/exit price lines, and current position state — updated in real time over WebSocket. (This is the initial visualization goal: *see the bot's signals and position changes play out on the chart live.*)
 - Conversational copilot: "explain this signal", "what's my risk today", portfolio narrative ("what moved and why").
 - Notifications on new signals/fills.
 
@@ -197,7 +198,10 @@ The sandbox's realism is governed by **four independent, pluggable models** behi
 - Tax-awareness hook (lot selection, wash-sale flags) — design now, deepen later.
 
 ### 5.8 Backtesting, Performance Tracking & Bot Qualification
-- Backtest framework sharing the **same code path** as sandbox/live (no drift). **The backtest engine is built in the Python `core`** — *not* outsourced to TradingView/Pine Script or any external backtester, since track records must be deterministic, replayable, and fed into the tamper-resistant ledger (§5.8.1). TradingView is used **only for charting** (Lightweight Charts, §8), never as the backtest engine.
+- Backtest framework sharing the **same code path** as sandbox/live (no drift). The backtest engine runs **in the Python `core`** so track records are deterministic, replayable, and fed into the tamper-resistant ledger (§5.8.1).
+  - **MVP accelerator:** rather than building a backtester from scratch, adopt a **free open-source Python framework** (e.g., **backtesting.py** for speed-to-ship, or VectorBT/Backtrader as needs grow), wrapped in `core`. Evolve toward a bespoke engine over time without changing the architecture.
+  - **TradingView backtester is *not* used:** it has **no public API** to run Pine Script backtests or extract results programmatically — it cannot feed a verifiable, multi-tenant marketplace. Designers may prototype in TradingView manually, but **platform track records come only from the in-core engine + sandbox.**
+  - TradingView is leveraged for **charting only** — Lightweight Charts + free embeddable Widgets (§8).
 - **Forward/sandbox performance recording** per bot — the basis for marketplace trust; tamper-resistant.
 - **Bot qualification gate:** during the `Evaluation` lifecycle stage, a bot is monitored over an **admin-configurable period** and must clear a **qualification policy** before it can be `Listed` / subscribed to by other users.
 - **Pluggable qualification policy:** the gate is a composable set of **`QualificationCriterion`** rules behind an interface — new criteria can be added, removed, or swapped without code changes elsewhere. The policy is **named and versioned**, so the exact bar a given bot passed is always recorded even as the rules evolve. v1 baseline (global defaults, admin-editable, designed to later vary **per risk tier**), bot must pass **all**:
@@ -275,7 +279,7 @@ Common **`Instrument`** model + small interface set so adding an asset class is 
 | **Backend** | **Python + FastAPI** | Single source of truth: auth/RBAC, marketplace, billing, brokers, strategies, risk, agent orchestration. REST/JSON + WebSocket, OpenAPI. |
 | **Frontend (web)** | **React + TypeScript SPA via Vite** | Pure client, clean FE/BE separation. No SSR (behind login). |
 | **Mobile (later)** | **React Native + Expo** | Shares logic with web via `core`; UI rebuilt. |
-| **Charts (price)** | **TradingView Lightweight Charts** | Web. Free (MIT). |
+| **Charts (price)** | **TradingView Lightweight Charts** + free **TradingView Widgets** | Web. Free. Widgets (advanced chart, mini-chart, ticker, screener) are drop-in embeds — used to accelerate the MVP. |
 | **Charts (analytics)** | Recharts / visx | Performance, allocation, drawdown, greeks. |
 | **Tables** | **TanStack Table** (+ virtualization) | Marketplace lists, positions, orders. |
 | **Server state / fetching** | **TanStack Query** | Works web + RN. |
@@ -341,6 +345,7 @@ Monorepo via **pnpm + Turborepo**. Split protects the future mobile path: shared
 5. **Marketplace**: browse/subscribe to free bots; bot detail with verified track record.
 6. **Per-subscription sandbox**: auto-provisioned isolated ledger that auto-executes the bot; subscriber dashboard (simulated P&L, positions, history).
 7. **Signal streams + copilot**: explained signals, sandbox fills, daily narrative.
+   - **Primary v0.1 visualization:** bot signals + position changes shown **live on a TradingView Lightweight Charts** view (▲/▼ markers, entry/exit lines, position state) streamed over WebSocket.
 8. Deterministic risk/sizing engine with hard guardrails.
 9. **Billing skeleton**: Stripe Connect integration for paid subscriptions, configurable commission, designer premium, payouts. *(Can run in test mode for v0.1.)*
 10. **Admin console**: manage roles, moderate bots, set commission/premium/qualification thresholds, kill-switch.
@@ -368,7 +373,8 @@ Monorepo via **pnpm + Turborepo**. Split protects the future mobile path: shared
 - [x] **Sandbox fill model** — **four pluggable models** (`FillPriceModel`, `SlippageModel`, `CommissionModel`, `OptionsPricingModel`), admin-configurable, conservative defaults (cross-spread + fixed-bps slippage + modeled commissions + real options quotes); extensible (§5.5.1).
 - [x] **Qualification thresholds** — pluggable, versioned **`QualificationCriterion`** policy; v1 baseline: ≥90 days, ≥30 trades, Sharpe ≥1.0, max DD ≤25%, net positive, ≤30% concentration; admin-editable, designed for per-tier; extensible (§5.8).
 - [x] **Platform subscription tier** — **freemium** Free/Pro (capability-based, admin-configurable); all-access bundle & usage-metering deferred. Designed-in, likely v1.x (§1.3).
-- [x] **Data source** — **ThinkorSwim / Schwab API first** (data now, live execution later), behind a swappable `MarketDataProvider`. Backtest engine built **in-house in Python** (not TradingView/Pine — conflicts with same-code-path + tamper-resistant ledger). *Caveat:* deep historical options data is thin on broker APIs — a vendor (Polygon/Databento) may be needed later for historical options backtesting.
+- [x] **Data source** — **ThinkorSwim / Schwab API first** (data now, live execution later), behind a swappable `MarketDataProvider`. *Caveat:* deep historical options data is thin on broker APIs — a vendor (Polygon/Databento) may be needed later for historical options backtesting.
+- [x] **Backtesting & charts (MVP)** — backtest engine **in Python `core`**, accelerated with an **OSS framework** (backtesting.py / VectorBT / Backtrader), evolving to bespoke. **Charts via TradingView Lightweight Charts + free Widgets.** TradingView backtester **not integrable** (no public API) — prototyping only; track records come from in-core engine + sandbox (§5.8).
 - [x] **Auth** — **build in-house**, OIDC/OAuth social login via **Authlib** (Google first, multi-provider), backend-issued JWT/session, RBAC in FastAPI; social-first to avoid password risk; email fallback later if needed (§5.1).
 
 **Remaining / deferred (not blocking v0.1):**
