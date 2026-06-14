@@ -1,0 +1,45 @@
+# ---- Node / Frontend (web, mobile, packages) ----
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.expo/
+*.tsbuildinfo
+.pnpm-store/
+
+# ---- Python / Backend ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Environment & secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Logs & data ----
+*.log
+logs/
+*.sqlite
+*.db
+data/cache/
+
+# ---- Claude Code (local settings) ----
+.claude/settings.local.json
+
+# ---- OS / Editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
