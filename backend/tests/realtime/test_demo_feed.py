@@ -14,6 +14,12 @@ def test_snapshot_shape_and_monotonic_time() -> None:
     assert all(b.low <= b.open and b.low <= b.close for b in bars)
 
 
+def test_bars_carry_positive_volume() -> None:
+    feed = DemoFeed("AAPL", seed=42)
+    bars = feed.snapshot(30)
+    assert all(b.volume > 0 for b in bars)
+
+
 def test_signals_are_throttled_and_valid() -> None:
     feed = DemoFeed("TSLA", seed=7)
     sides: set[str] = set()

@@ -32,6 +32,10 @@ async def test_session_streams_and_writes_real_fills(tenant_ctx: TenantId) -> No
         perf = next(m["perf"] for m in sent if m["type"] == "perf")
         assert {"equity", "cash", "net_pnl", "num_trades"} <= perf.keys()
 
+        # bars carry volume on the wire (feeds VWAP / volume indicators on the client)
+        bar_msg = next(m for m in sent if m["type"] == "bar")
+        assert "volume" in bar_msg["bar"] and bar_msg["bar"]["volume"] > 0
+
         # The SMA-cross strategy should have traded, writing fills to the ledger,
         # and the ledger must verify intact.
         ledger = EventLedger(uow.session)
