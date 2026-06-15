@@ -10,7 +10,14 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { DemoMessage, DemoSignal, SandboxPerf } from "./types";
+import type {
+  BlockedOrder,
+  DemoMessage,
+  DemoSignal,
+  LifecycleState,
+  OrderAction,
+  SandboxPerf,
+} from "./types";
 
 const WS_URL = "ws://localhost:8000/ws/sandbox";
 
@@ -29,6 +36,35 @@ function makeMarker(time: Time, side: Side, manual: boolean): SeriesMarker<Time>
     shape: side === "buy" ? "arrowUp" : "arrowDown",
     text: manual ? `${side.toUpperCase()} (manual)` : side.toUpperCase(),
   };
+}
+
+function makeBlockedMarker(time: Time, action: OrderAction): SeriesMarker<Time> {
+  return {
+    time,
+    position: action === "buy" ? "belowBar" : "aboveBar",
+    color: "#f0b429",
+    shape: "circle",
+    text: "BLOCKED",
+  };
+}
+
+function LifecycleBadge({ lifecycle }: { lifecycle: LifecycleState }) {
+  const q = lifecycle.qualification;
+  const title = q
+    ? q.passed
+      ? `Passed ${q.policy} v${q.policy_version}`
+      : `Failed ${q.policy} v${q.policy_version}: ${q.failures.join(", ")}`
+    : "Evaluating…";
+  return (
+    <span className={`lifecycle lifecycle-${lifecycle.state}`} title={title}>
+      <span className="lc-state">{lifecycle.state}</span>
+      {q && (
+        <span className="lc-qual">
+          {q.passed ? `✓ ${q.policy} v${q.policy_version}` : `✗ ${q.failures.join(", ")}`}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // Simple moving average computed from candle closes — an "indicator" in our own code.
@@ -57,6 +93,8 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
 
   const [status, setStatus] = useState<Status>("connecting");
   const [signals, setSignals] = useState<DemoSignal[]>([]);
+  const [blocked, setBlocked] = useState<BlockedOrder[]>([]);
+  const [lifecycle, setLifecycle] = useState<LifecycleState | null>(null);
   const [perf, setPerf] = useState<SandboxPerf | null>(null);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
@@ -144,6 +182,8 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     const ws = new WebSocket(`${WS_URL}?symbol=${encodeURIComponent(symbol)}`);
     setStatus("connecting");
     setPerf(null);
+    setBlocked([]);
+    setLifecycle(null);
     ws.onopen = () => setStatus("live");
     ws.onclose = () => setStatus("closed");
     ws.onerror = () => setStatus("closed");
@@ -189,6 +229,16 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         ].slice(-100);
         applyMarkers();
         setSignals((prev) => [s, ...prev].slice(0, 12));
+      } else if (msg.type === "blocked") {
+        const b = msg.blocked;
+        markersRef.current = [
+          ...markersRef.current,
+          makeBlockedMarker(b.time as UTCTimestamp, b.action),
+        ].slice(-100);
+        applyMarkers();
+        setBlocked((prev) => [b, ...prev].slice(0, 8));
+      } else if (msg.type === "lifecycle") {
+        setLifecycle(msg.lifecycle);
       } else if (msg.type === "perf") {
         setPerf(msg.perf);
       }
@@ -220,6 +270,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
               </span>
             </span>
           )}
+          {lifecycle && <LifecycleBadge lifecycle={lifecycle} />}
           <span className={`status status-${status}`}>● {status}</span>
         </div>
 
@@ -265,10 +316,29 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         {signals.length === 0 && <p className="muted">Waiting for signals…</p>}
         <ul>
           {signals.map((s, i) => (
-            <li key={`${s.time}-${i}`} className={`sig sig-${s.side}`}>
+            <li
+              key={`${s.time}-${i}`}
+              className={`sig sig-${s.side}`}
+              title={s.rationale?.invalidation ?? undefined}
+            >
               <span className="sig-side">{s.side.toUpperCase()}</span>
               <span className="sig-price">${s.price.toFixed(2)}</span>
               <span className="sig-reason">{s.reason}</span>
+              {s.rationale && s.rationale.indicators.length > 0 && (
+                <span className="sig-indicators">{s.rationale.indicators.join(" · ")}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <h3>Blocked orders</h3>
+        {blocked.length === 0 && <p className="muted">None — every order passed risk.</p>}
+        <ul>
+          {blocked.map((b, i) => (
+            <li key={`${b.time}-${i}`} className={`blk blk-${b.kind}`}>
+              <span className="blk-kind">{b.kind}</span>
+              <span className="blk-action">{b.action.toUpperCase()}</span>
+              <span className="blk-reason">{b.reason}</span>
             </li>
           ))}
         </ul>

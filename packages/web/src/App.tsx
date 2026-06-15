@@ -23,9 +23,11 @@ export function App() {
         </div>
       </header>
       <p className="subtitle">
-        A live SMA-crossover bot trading in the <strong>real sandbox</strong> (M5) — every
-        fill is recorded on the hash-chained ledger (M10); fills and live P&amp;L stream over
-        WebSocket onto TradingView Lightweight Charts.
+        A live SMA-crossover <strong>bot</strong> (M3/M9) trading in the{" "}
+        <strong>real sandbox</strong> (M5): each signal is risk-checked and guardrailed (M6)
+        before it fills, every fill is recorded on the hash-chained ledger (M10), and the bot is
+        qualified into a lifecycle state (M4) — all streamed over WebSocket onto Lightweight
+        Charts.
       </p>
       {/* key forces a clean remount (new WS + fresh chart) on symbol change */}
       <SignalChart key={symbol} symbol={symbol} />
