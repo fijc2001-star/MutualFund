@@ -4,6 +4,7 @@ import {
   type Candle,
   aggregate,
   anchoredVwap,
+  htfLevels,
   movingAverage,
   prevPeriodLevels,
   rsi,
@@ -118,6 +119,23 @@ describe("aggregate", () => {
   it("returns the input unchanged for 1-minute timeframe", () => {
     const bars = series([1, 2, 3]);
     expect(aggregate(bars, 1)).toEqual(bars);
+  });
+});
+
+describe("higher-timeframe levels", () => {
+  it("plots the prior completed HTF bucket's high/low/close", () => {
+    // 2-minute buckets over 1-min bars: bucket0 = bars[0,1], bucket1 = bars[2,3]
+    const bars = [
+      c(0, 10, 12, 8),
+      c(60, 11, 15, 9), // bucket0: h=15, l=8, close=11
+      c(120, 20, 21, 19),
+      c(180, 22, 25, 18), // bucket1
+    ];
+    const lv = htfLevels(bars, 2);
+    // bucket0 bars have no prior bucket; bucket1 bars carry bucket0's levels
+    expect(values(lv.high)).toEqual([15, 15]);
+    expect(values(lv.low)).toEqual([8, 8]);
+    expect(values(lv.close)).toEqual([11, 11]);
   });
 });
 

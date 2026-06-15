@@ -252,6 +252,51 @@ export interface PrevLevels {
   pwl: Point[];
 }
 
+export interface HtfLevels {
+  high: Point[];
+  low: Point[];
+  close: Point[];
+}
+
+// Higher-timeframe high/low/close, as step lines: at each bar, the values of the *previous
+// completed* HTF bucket (no lookahead — matches request.security lookahead_off). Lets you see
+// the 4H levels while trading a faster timeframe.
+export function htfLevels(candles: Candle[], htfMinutes: number): HtfLevels {
+  const tf = htfMinutes * 60;
+  const key = (t: number) => Math.floor(t / tf);
+
+  const agg = new Map<number, { h: number; l: number; c: number }>();
+  const order: number[] = [];
+  for (const c of candles) {
+    const k = key(c.time);
+    const e = agg.get(k);
+    if (!e) {
+      agg.set(k, { h: c.high, l: c.low, c: c.close });
+      order.push(k);
+    } else {
+      if (c.high > e.h) e.h = c.high;
+      if (c.low < e.l) e.l = c.low;
+      e.c = c.close; // last close in the bucket
+    }
+  }
+
+  const prior = new Map<number, { h: number; l: number; c: number }>();
+  for (let i = 1; i < order.length; i++) {
+    prior.set(order[i], agg.get(order[i - 1]) as { h: number; l: number; c: number });
+  }
+
+  const out: HtfLevels = { high: [], low: [], close: [] };
+  for (const c of candles) {
+    const p = prior.get(key(c.time));
+    if (p) {
+      out.high.push({ time: c.time, value: p.h });
+      out.low.push({ time: c.time, value: p.l });
+      out.close.push({ time: c.time, value: p.c });
+    }
+  }
+  return out;
+}
+
 // Previous-day and previous-week high/low, as step lines (the level in effect at each bar).
 export function prevPeriodLevels(candles: Candle[]): PrevLevels {
   const dayKey = (t: number) => Math.floor(t / SECONDS_PER_DAY);

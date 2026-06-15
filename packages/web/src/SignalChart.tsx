@@ -24,6 +24,7 @@ import {
   type MaType,
   aggregate,
   anchoredVwap,
+  htfLevels,
   movingAverage,
   prevPeriodLevels,
   rsi,
@@ -47,6 +48,13 @@ const RANGES: { label: string; seconds: number | "all" }[] = [
   { label: "1D", seconds: 86_400 },
   { label: "1W", seconds: 604_800 },
   { label: "All", seconds: "all" },
+];
+
+const HTF_OPTIONS: { label: string; minutes: number }[] = [
+  { label: "15m", minutes: 15 },
+  { label: "1h", minutes: 60 },
+  { label: "4h", minutes: 240 },
+  { label: "1D", minutes: 1440 },
 ];
 
 type Status = "connecting" | "live" | "closed" | "replay";
@@ -73,6 +81,8 @@ interface Settings {
   enAVWAP: boolean;
   avwapDate: string; // "YYYY-MM-DD"; empty → anchor at first bar
   enLevels: boolean;
+  enHTF: boolean;
+  htfMinutes: number;
   enRSI: boolean;
   rsiLen: number;
 }
@@ -90,6 +100,8 @@ const DEFAULT_SETTINGS: Settings = {
   enAVWAP: false,
   avwapDate: "",
   enLevels: true,
+  enHTF: false,
+  htfMinutes: 240,
   enRSI: true,
   rsiLen: 14,
 };
@@ -104,6 +116,9 @@ interface Overlays {
   pdl: ISeriesApi<"Line">;
   pwh: ISeriesApi<"Line">;
   pwl: ISeriesApi<"Line">;
+  htfHigh: ISeriesApi<"Line">;
+  htfLow: ISeriesApi<"Line">;
+  htfClose: ISeriesApi<"Line">;
 }
 
 function sortByTime(markers: SeriesMarker<Time>[]): SeriesMarker<Time>[] {
@@ -245,6 +260,16 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         seriesApi.applyOptions({ visible: s.enLevels });
         seriesApi.setData(data);
       }
+
+      const htf = s.enHTF ? htfLevels(bars, s.htfMinutes) : { high: [], low: [], close: [] };
+      for (const [seriesApi, data] of [
+        [ov.htfHigh, htf.high],
+        [ov.htfLow, htf.low],
+        [ov.htfClose, htf.close],
+      ] as const) {
+        seriesApi.applyOptions({ visible: s.enHTF });
+        seriesApi.setData(data);
+      }
     }
 
     if (rsiSeriesRef.current) {
@@ -301,6 +326,13 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       });
     const step = (color: string, title: string) =>
       line(color, { lineWidth: 1, lineType: LineType.WithSteps, title });
+    const stepDashed = (color: string, title: string) =>
+      line(color, {
+        lineWidth: 1,
+        lineType: LineType.WithSteps,
+        lineStyle: LineStyle.Dashed,
+        title,
+      });
 
     const overlays: Overlays = {
       mas: DEFAULT_SETTINGS.mas.map((m) => line(m.color, { title: `MA ${m.len}` })),
@@ -312,6 +344,9 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       pdl: step("#b0bec5", "PDL"),
       pwh: step("#4dd0e1", "PWH"),
       pwl: step("#4dd0e1", "PWL"),
+      htfHigh: stepDashed("#66bb6a", "HTF High"),
+      htfLow: stepDashed("#ef9a9a", "HTF Low"),
+      htfClose: stepDashed("#90a4ae", "HTF Close"),
     };
 
     chartRef.current = chart;
@@ -643,6 +678,28 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
             />
             Key levels (PDH/PDL/PWH/PWL)
           </label>
+
+          <label className="ind-head">
+            <input
+              type="checkbox"
+              checked={settings.enHTF}
+              onChange={(e) => patch({ enHTF: e.target.checked })}
+            />
+            Higher-timeframe levels
+          </label>
+          <div className="ind-row">
+            <span className="muted">timeframe</span>
+            <select
+              value={settings.htfMinutes}
+              onChange={(e) => patch({ htfMinutes: Number(e.target.value) })}
+            >
+              {HTF_OPTIONS.map((o) => (
+                <option key={o.minutes} value={o.minutes}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <label className="ind-head">
             <input
