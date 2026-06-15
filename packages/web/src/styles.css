@@ -270,9 +270,24 @@ body {
   margin: 0 4px;
 }
 
+.chart-stage {
+  position: relative;
+}
+
 .chart-canvas {
   height: 460px;
   width: 100%;
+}
+
+/* Drag-to-zoom selection rectangle. */
+.zoom-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(41, 98, 255, 0.15);
+  border: 1px solid rgba(41, 98, 255, 0.6);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .rsi-pane {

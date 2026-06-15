@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from "react";
 import {
   createChart,
   CrosshairMode,
@@ -259,6 +259,9 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const effectiveTfRef = useRef(1);
   const [cursorShape, setCursorShape] = useState("crosshair");
   const [magnet, setMagnet] = useState(false);
+  const [selectZoom, setSelectZoom] = useState(false);
+  const selRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ x0: number; rectLeft: number } | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const settingsRef = useRef<Settings>(settings);
 
@@ -578,6 +581,13 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     });
   }, [magnet]);
 
+  // In zoom-select mode, left-drag selects a region instead of panning the chart.
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      handleScroll: { pressedMouseMove: !selectZoom, horzTouchDrag: !selectZoom },
+    });
+  }, [selectZoom]);
+
   // Move the playback cursor → reveal up to it.
   useEffect(() => {
     cursorRef.current = cursor;
@@ -740,6 +750,47 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     setCursor((c) => Math.max(0, Math.min(barCount - 1, c + delta)));
   }
 
+  // Drag-to-zoom: select a horizontal region; on release, fit the chart to that span
+  // (Auto timeframe then drills into a finer timeframe).
+  function onZoomDown(e: ReactMouseEvent) {
+    if (!selectZoom) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragRef.current = { x0: e.clientX - rect.left, rectLeft: rect.left };
+    const sel = selRef.current;
+    if (sel) {
+      sel.style.display = "block";
+      sel.style.left = `${dragRef.current.x0}px`;
+      sel.style.width = "0px";
+    }
+  }
+
+  function onZoomMove(e: ReactMouseEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    const x = e.clientX - d.rectLeft;
+    const sel = selRef.current;
+    if (sel) {
+      sel.style.left = `${Math.min(d.x0, x)}px`;
+      sel.style.width = `${Math.abs(x - d.x0)}px`;
+    }
+  }
+
+  function onZoomUp(e: ReactMouseEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    dragRef.current = null;
+    if (selRef.current) selRef.current.style.display = "none";
+    const x1 = e.clientX - d.rectLeft;
+    if (Math.abs(x1 - d.x0) < 5) return; // ignore tiny drags / clicks
+    const ts = chartRef.current?.timeScale();
+    if (!ts) return;
+    const a = ts.coordinateToTime(Math.min(d.x0, x1));
+    const b = ts.coordinateToTime(Math.max(d.x0, x1));
+    if (a !== null && b !== null && a !== b) {
+      ts.setVisibleRange({ from: a, to: b });
+    }
+  }
+
   const patch = (p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p }));
   const patchMa = (i: number, p: Partial<MaCfg>) =>
     setSettings((s) => ({ ...s, mas: s.mas.map((m, j) => (j === i ? { ...m, ...p } : m)) }));
@@ -819,6 +870,19 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           >
             Magnet
           </button>
+          <button
+            className={selectZoom ? "active" : ""}
+            onClick={() =>
+              setSelectZoom((v) => {
+                const next = !v;
+                if (next) setTf(0); // Auto timeframe so the selection drills the bars finer
+                return next;
+              })
+            }
+            title="Drag a region on the chart to zoom into it (timeframe drills in)"
+          >
+            ⛶ Zoom
+          </button>
         </div>
 
         {backtest && (
@@ -878,7 +942,16 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           <span className="muted">manual: {manualCount}</span>
         </div>
 
-        <div ref={containerRef} className={`chart-canvas cur-${cursorShape}`} />
+        <div
+          className="chart-stage"
+          onMouseDown={onZoomDown}
+          onMouseMove={onZoomMove}
+          onMouseUp={onZoomUp}
+          onMouseLeave={onZoomUp}
+        >
+          <div ref={containerRef} className={`chart-canvas cur-${selectZoom ? "crosshair" : cursorShape}`} />
+          <div ref={selRef} className="zoom-sel" style={{ display: "none" }} />
+        </div>
         {settings.enRSI && <div ref={rsiContainerRef} className="rsi-pane" />}
         {backtest && equity.length > 0 && <div className="pane-label">Backtest equity</div>}
         {backtest && equity.length > 0 && (
