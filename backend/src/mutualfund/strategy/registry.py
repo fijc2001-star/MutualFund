@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .library import MomentumStrategy, SmaCrossStrategy
+from .library import AgentStrategy, MomentumStrategy, SmaCrossStrategy
 from .strategy import RegisteredStrategy, Strategy
 
 
@@ -50,6 +50,7 @@ def _default_registry() -> StrategyRegistry:
     registry = StrategyRegistry()
     registry.register(SmaCrossStrategy)
     registry.register(MomentumStrategy)
+    registry.register(AgentStrategy)
     return registry
 
 

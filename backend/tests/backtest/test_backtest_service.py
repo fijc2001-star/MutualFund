@@ -32,6 +32,22 @@ async def test_backtest_full_history(tenant_ctx: TenantId) -> None:
         await uow.rollback()
 
 
+async def test_backtest_runs_agent_strategy(tenant_ctx: TenantId) -> None:
+    """The agentic strategy flows through the same pipeline (stub client, no API key needed)."""
+    async with UnitOfWork() as uow:
+        result = await BacktestService(uow.session, history_bars=2000).run(
+            "AAPL", strategy_id="agent", params={"fast": 9, "slow": 21}
+        )
+        assert result.perf["num_trades"] > 0
+        # Signals carry the agent's reasoning (RSI indicator + a thesis).
+        assert result.signals
+        rationale = result.signals[0]["rationale"]
+        assert rationale["thesis"]
+        assert any(ind.startswith("RSI(") for ind in rationale["indicators"])
+
+        await uow.rollback()
+
+
 async def test_backtest_window_is_bounded_and_warmed_up(tenant_ctx: TenantId) -> None:
     start = _FIRST + 500 * _STEP
     end = _FIRST + 1500 * _STEP

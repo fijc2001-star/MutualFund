@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     risk_max_drawdown_pct: Decimal = Decimal("0.20")  # halt below -20% from peak
     risk_kill_switch: bool = False  # global "stop trading" override
 
+    # Agentic strategy (M9 "agent") — uses Claude when a key is set, a deterministic stub
+    # otherwise, so the strategy registers/backtests/qualifies today and goes live with a key.
+    anthropic_api_key: str | None = None
+    agent_model: str = "claude-opus-4-8"
+
     # Market data
     marketdata_provider: str = "fake"
     schwab_client_id: str | None = None
