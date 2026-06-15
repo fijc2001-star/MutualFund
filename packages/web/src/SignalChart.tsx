@@ -28,13 +28,26 @@ function sortByTime(markers: SeriesMarker<Time>[]): SeriesMarker<Time>[] {
   return [...markers].sort((a, b) => Number(a.time) - Number(b.time));
 }
 
-function makeMarker(time: Time, side: Side, manual: boolean): SeriesMarker<Time> {
+function makeMarker(
+  time: Time,
+  side: Side,
+  manual: boolean,
+  price?: number,
+): SeriesMarker<Time> {
+  // Buy → green up-arrow below the bar; Sell → red down-arrow above the bar.
+  // Bot signals are labeled with the fill price only (no BUY/SELL word).
+  const text = manual
+    ? `${side.toUpperCase()} (manual)`
+    : price !== undefined
+      ? price.toFixed(2)
+      : "";
   return {
     time,
     position: side === "buy" ? "belowBar" : "aboveBar",
     color: side === "buy" ? "#26a69a" : "#ef5350",
     shape: side === "buy" ? "arrowUp" : "arrowDown",
-    text: manual ? `${side.toUpperCase()} (manual)` : side.toUpperCase(),
+    size: manual ? 1 : 2, // make real bot signals more prominent than manual markers
+    text,
   };
 }
 
@@ -205,6 +218,12 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         series.setData(data);
         recomputeIndicators();
         chartRef.current?.timeScale().fitContent();
+        // A snapshot starts a fresh bar series — clear markers/feed so a reconnect
+        // (e.g. HMR) doesn't stack duplicate arrows from the replayed deterministic feed.
+        markersRef.current = [];
+        applyMarkers();
+        setSignals([]);
+        setManualCount(0);
       } else if (msg.type === "bar") {
         const bar: CandlestickData = {
           time: msg.bar.time as UTCTimestamp,
@@ -225,7 +244,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         const s = msg.signal;
         markersRef.current = [
           ...markersRef.current,
-          makeMarker(s.time as UTCTimestamp, s.side, false),
+          makeMarker(s.time as UTCTimestamp, s.side, false, s.price),
         ].slice(-100);
         applyMarkers();
         setSignals((prev) => [s, ...prev].slice(0, 12));
