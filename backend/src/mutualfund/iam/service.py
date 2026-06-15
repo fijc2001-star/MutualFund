@@ -44,6 +44,27 @@ class IdentityService:
         tokens = await self._issue_pair(user)
         return user, tokens
 
+    async def dev_login(self, email: str, role: Role = Role.USER) -> tuple[User, TokenPair]:
+        """Dev-only shortcut: find-or-create a user by email and issue tokens (no OAuth).
+
+        Lets the app be exercised end to end before Google credentials exist. Gated to
+        non-production by the caller. The requested role is applied so designer/admin views
+        can be tried out.
+        """
+        info = OAuthUserInfo(
+            provider="dev",
+            subject=f"dev:{email}",
+            email=email,
+            email_verified=True,
+            display_name=email.split("@")[0],
+        )
+        user = await self._find_or_create_user(info)
+        if user.role != role.value:
+            user.role = role.value
+            await self.session.flush()
+        tokens = await self._issue_pair(user)
+        return user, tokens
+
     async def _find_or_create_user(self, info: OAuthUserInfo) -> User:
         # 1) existing federated identity?
         identity = await self.session.scalar(

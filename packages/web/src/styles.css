@@ -37,6 +37,94 @@ body {
   font-size: 14px;
 }
 
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-box button {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Login screen */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  width: 320px;
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+}
+
+.login-card h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.login-card input,
+.login-card select,
+.login-card button {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.login-card button[type="submit"],
+.login-card .google {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.login-card .google {
+  width: 100%;
+  margin-top: 12px;
+  background: #2962ff;
+  border-color: #2962ff;
+  color: #fff;
+}
+
+.login-sep {
+  margin: 16px 0 8px;
+  color: #5a6479;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.login-err {
+  color: #ef5350;
+  font-size: 13px;
+}
+
+.login-note {
+  margin-top: 14px;
+  font-size: 12px;
+}
+
 .symbol-picker {
   display: flex;
   gap: 8px;

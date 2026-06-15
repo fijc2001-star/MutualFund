@@ -13,6 +13,7 @@ from ..foundation.ids import TenantId
 from ..foundation.uow import UnitOfWork
 from .deps import CurrentPrincipal
 from .oauth import get_provider
+from .roles import Role
 from .service import IdentityService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -26,6 +27,11 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class DevLoginRequest(BaseModel):
+    email: str
+    role: str = "user"
 
 
 class MeResponse(BaseModel):
@@ -63,6 +69,29 @@ async def callback(provider: str, code: str = Query(...)) -> TokenResponse:
     async with UnitOfWork() as uow:
         service = IdentityService(uow.session, tenant_id)
         _, tokens = await service.login_with_oauth(info)
+    return TokenResponse(
+        access_token=tokens.access_token, refresh_token=tokens.refresh_token
+    )
+
+
+@router.post("/dev-login", response_model=TokenResponse)
+async def dev_login(body: DevLoginRequest) -> TokenResponse:
+    """Issue tokens for a test user without OAuth. Disabled in production."""
+    settings = get_settings()
+    if settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Dev login is disabled in production"
+        )
+    try:
+        role = Role(body.role)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown role: {body.role}"
+        ) from exc
+    tenant_id = TenantId(settings.default_tenant_id)
+    async with UnitOfWork() as uow:
+        service = IdentityService(uow.session, tenant_id)
+        _, tokens = await service.dev_login(body.email, role)
     return TokenResponse(
         access_token=tokens.access_token, refresh_token=tokens.refresh_token
     )
