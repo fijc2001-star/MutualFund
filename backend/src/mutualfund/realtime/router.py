@@ -13,6 +13,7 @@ import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ..backtest.service import BacktestService
 from ..config import get_settings
 from ..foundation.ids import TenantId
 from ..foundation.tenant import TenantContext
@@ -101,7 +102,15 @@ async def replay_stream(websocket: WebSocket) -> None:
             bars, signals = await svc.replay(sub)
             await uow.commit()  # persist the subscription + materialized signal stream
 
+        # Backtest the bot over its history for the equity curve + stats. Runs in its own
+        # unit of work that we roll back, so the throwaway fills never persist.
+        async with UnitOfWork() as bt_uow:
+            result = await BacktestService(bt_uow.session).run(symbol)
+            await bt_uow.rollback()
+
         await websocket.send_json({"type": "snapshot", "symbol": symbol, "bars": bars})
+        await websocket.send_json({"type": "perf", "perf": result.perf})
+        await websocket.send_json({"type": "equity", "equity": result.equity})
         for signal in signals:
             await websocket.send_json({"type": "signal", "signal": signal})
         await websocket.send_json(

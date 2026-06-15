@@ -15,6 +15,7 @@ import type {
   BlockedOrder,
   DemoMessage,
   DemoSignal,
+  EquityPoint,
   LifecycleState,
   OrderAction,
   SandboxPerf,
@@ -193,6 +194,8 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const overlaysRef = useRef<Overlays | null>(null);
   const rsiChartRef = useRef<IChartApi | null>(null);
   const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const equityContainerRef = useRef<HTMLDivElement>(null);
+  const equityChartRef = useRef<IChartApi | null>(null);
   const syncingRef = useRef(false);
 
   const base1mRef = useRef<Candle[]>([]); // raw 1-minute bars (source of truth)
@@ -206,6 +209,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const [blocked, setBlocked] = useState<BlockedOrder[]>([]);
   const [lifecycle, setLifecycle] = useState<LifecycleState | null>(null);
   const [perf, setPerf] = useState<SandboxPerf | null>(null);
+  const [equity, setEquity] = useState<EquityPoint[]>([]);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
   const [replay, setReplay] = useState(false);
@@ -363,11 +367,12 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       setManualCount((n) => n + 1);
     });
 
-    // Keep the RSI pane's time scale in lockstep with the price chart.
+    // Keep the sub-panes' time scales in lockstep with the price chart.
     chart.timeScale().subscribeVisibleLogicalRangeChange((range: LogicalRange | null) => {
-      if (syncingRef.current || !range || !rsiChartRef.current) return;
+      if (syncingRef.current || !range) return;
       syncingRef.current = true;
-      rsiChartRef.current.timeScale().setVisibleLogicalRange(range);
+      rsiChartRef.current?.timeScale().setVisibleLogicalRange(range);
+      equityChartRef.current?.timeScale().setVisibleLogicalRange(range);
       syncingRef.current = false;
     });
 
@@ -427,6 +432,34 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     };
   }, [settings.enRSI]);
 
+  // Backtest equity-curve sub-pane (replay mode only), synced to the price chart.
+  useEffect(() => {
+    if (!replay || equity.length === 0 || !equityContainerRef.current) return;
+    const chart = createChart(equityContainerRef.current, {
+      autoSize: true,
+      layout: { background: { color: "#0e1117" }, textColor: "#8b93a7" },
+      grid: { vertLines: { color: "#1c2230" }, horzLines: { color: "#1c2230" } },
+      timeScale: { timeVisible: true, secondsVisible: false },
+    });
+    const eqSeries = chart.addLineSeries({
+      color: "#26a69a",
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      title: "Equity",
+    });
+    eqSeries.setData(equity.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+    equityChartRef.current = chart;
+
+    const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange();
+    if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
+
+    return () => {
+      chart.remove();
+      equityChartRef.current = null;
+    };
+  }, [replay, equity]);
+
   // Mirror settings into the ref and recompute overlays when they change.
   useEffect(() => {
     settingsRef.current = settings;
@@ -445,6 +478,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     const ws = new WebSocket(`${base}?symbol=${encodeURIComponent(symbol)}`);
     setStatus("connecting");
     setPerf(null);
+    setEquity([]);
     setBlocked([]);
     setLifecycle(null);
     ws.onopen = () => setStatus((s) => (s === "replay" ? "replay" : "live"));
@@ -509,6 +543,8 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         setLifecycle(msg.lifecycle);
       } else if (msg.type === "perf") {
         setPerf(msg.perf);
+      } else if (msg.type === "equity") {
+        setEquity(msg.equity);
       } else if (msg.type === "replay_done") {
         setStatus("replay");
       }
@@ -541,6 +577,10 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
               <span className="perf-meta">
                 equity ${perf.equity.toFixed(0)} · pos {perf.position} · trades{" "}
                 {perf.num_trades} · maxDD {perf.max_drawdown_pct.toFixed(1)}%
+                {perf.win_rate !== undefined && ` · win ${(perf.win_rate * 100).toFixed(0)}%`}
+                {perf.sharpe !== undefined &&
+                  perf.sharpe !== null &&
+                  ` · Sharpe ${perf.sharpe.toFixed(2)}`}
               </span>
             </span>
           )}
@@ -593,6 +633,10 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
 
         <div ref={containerRef} className="chart-canvas" />
         {settings.enRSI && <div ref={rsiContainerRef} className="rsi-pane" />}
+        {replay && equity.length > 0 && (
+          <div className="pane-label">Backtest equity</div>
+        )}
+        {replay && equity.length > 0 && <div ref={equityContainerRef} className="equity-pane" />}
       </div>
 
       <aside className="side-col">

@@ -32,6 +32,13 @@ export interface SandboxPerf {
   return_pct: number;
   max_drawdown_pct: number;
   num_trades: number;
+  win_rate?: number; // backtest only
+  sharpe?: number | null; // backtest only
+}
+
+export interface EquityPoint {
+  time: number;
+  value: number;
 }
 
 export type OrderAction = "buy" | "sell" | "close";
@@ -66,4 +73,5 @@ export type DemoMessage =
   | { type: "perf"; perf: SandboxPerf }
   | { type: "blocked"; blocked: BlockedOrder }
   | { type: "lifecycle"; lifecycle: LifecycleState }
+  | { type: "equity"; equity: EquityPoint[] }
   | { type: "replay_done"; count: number; since: number };
