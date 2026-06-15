@@ -21,6 +21,39 @@ export type MaType = "SMA" | "EMA" | "WMA" | "RMA" | "HMA";
 
 const SECONDS_PER_DAY = 86_400;
 
+// Roll base (1-minute) candles up into a higher timeframe by bucketing on the bar's start
+// time. OHLC = first open / max high / min low / last close; volume summed. The bucket start
+// becomes the aggregated bar's time, so markers can be snapped to it.
+export function aggregate(candles: Candle[], timeframeMinutes: number): Candle[] {
+  if (timeframeMinutes <= 1) return candles;
+  const tf = timeframeMinutes * 60;
+  const out: Candle[] = [];
+  let cur: Candle | null = null;
+  let bucket = Number.NaN;
+  for (const c of candles) {
+    const b = Math.floor(c.time / tf) * tf;
+    if (b !== bucket) {
+      if (cur) out.push(cur);
+      bucket = b;
+      cur = {
+        time: b as UTCTimestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      };
+    } else if (cur) {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      cur.volume += c.volume;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 // --- moving-average kernels: number[] -> (number | null)[] aligned to input ---
 
 function smaArr(v: number[], n: number): (number | null)[] {

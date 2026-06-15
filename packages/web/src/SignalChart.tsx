@@ -22,6 +22,7 @@ import type {
 import {
   type Candle,
   type MaType,
+  aggregate,
   anchoredVwap,
   movingAverage,
   prevPeriodLevels,
@@ -32,8 +33,29 @@ import {
 const WS_URL = "ws://localhost:8000/ws/sandbox";
 const MA_TYPES: MaType[] = ["SMA", "EMA", "WMA", "RMA", "HMA"];
 
+const TIMEFRAMES: { label: string; minutes: number }[] = [
+  { label: "1m", minutes: 1 },
+  { label: "5m", minutes: 5 },
+  { label: "15m", minutes: 15 },
+  { label: "1h", minutes: 60 },
+  { label: "1D", minutes: 1440 },
+];
+
+const RANGES: { label: string; seconds: number | "all" }[] = [
+  { label: "1H", seconds: 3600 },
+  { label: "1D", seconds: 86_400 },
+  { label: "1W", seconds: 604_800 },
+  { label: "All", seconds: "all" },
+];
+
 type Status = "connecting" | "live" | "closed";
 type Side = "buy" | "sell";
+
+// Markers are kept at their raw (1-minute) time and snapped to the active timeframe's
+// bucket at render time, so a signal still lands on a candle after the timeframe changes.
+type RawMarker =
+  | { kind: "signal"; time: number; side: Side; price?: number; manual: boolean }
+  | { kind: "blocked"; time: number; action: OrderAction };
 
 interface MaCfg {
   on: boolean;
@@ -71,7 +93,6 @@ const DEFAULT_SETTINGS: Settings = {
   rsiLen: 14,
 };
 
-// Overlay line series, created once and fed (or cleared) on each recompute.
 interface Overlays {
   mas: ISeriesApi<"Line">[];
   vwap: ISeriesApi<"Line">;
@@ -86,6 +107,11 @@ interface Overlays {
 
 function sortByTime(markers: SeriesMarker<Time>[]): SeriesMarker<Time>[] {
   return [...markers].sort((a, b) => Number(a.time) - Number(b.time));
+}
+
+function bucketTime(t: number, tfMinutes: number): UTCTimestamp {
+  const tf = tfMinutes * 60;
+  return (tfMinutes <= 1 ? t : Math.floor(t / tf) * tf) as UTCTimestamp;
 }
 
 function makeMarker(time: Time, side: Side, manual: boolean, price?: number): SeriesMarker<Time> {
@@ -153,10 +179,11 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const syncingRef = useRef(false);
 
-  const barsRef = useRef<Candle[]>([]);
-  const markersRef = useRef<SeriesMarker<Time>[]>([]);
+  const base1mRef = useRef<Candle[]>([]); // raw 1-minute bars (source of truth)
+  const displayedRef = useRef<Candle[]>([]); // aggregated to the active timeframe
+  const rawMarkersRef = useRef<RawMarker[]>([]);
   const sideRef = useRef<Side>("buy");
-  const recomputeRef = useRef<() => void>(() => {});
+  const redrawRef = useRef<() => void>(() => {});
 
   const [status, setStatus] = useState<Status>("connecting");
   const [signals, setSignals] = useState<DemoSignal[]>([]);
@@ -165,6 +192,8 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const [perf, setPerf] = useState<SandboxPerf | null>(null);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
+  const [tf, setTf] = useState(1);
+  const tfRef = useRef(tf);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const settingsRef = useRef<Settings>(settings);
 
@@ -173,51 +202,74 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   }, [side]);
 
   function applyMarkers() {
-    seriesRef.current?.setMarkers(sortByTime(markersRef.current));
+    const tfMin = tfRef.current;
+    const markers = rawMarkersRef.current.map((r) =>
+      r.kind === "blocked"
+        ? makeBlockedMarker(bucketTime(r.time, tfMin), r.action)
+        : makeMarker(bucketTime(r.time, tfMin), r.side, r.manual, r.price),
+    );
+    seriesRef.current?.setMarkers(sortByTime(markers));
   }
 
-  // recomputeRef holds the latest closure so the (symbol-scoped) WS handler never goes stale.
-  recomputeRef.current = () => {
-    const bars = barsRef.current;
+  function recomputeOverlays(bars: Candle[]) {
     const s = settingsRef.current;
     const ov = overlaysRef.current;
-    if (!ov) return;
+    if (ov) {
+      ov.mas.forEach((seriesApi, i) => {
+        const cfg = s.mas[i];
+        const show = s.enMA && cfg.on;
+        seriesApi.applyOptions({ visible: show, color: cfg.color });
+        seriesApi.setData(show ? movingAverage(bars, cfg.len, cfg.type) : []);
+      });
 
-    ov.mas.forEach((series, i) => {
-      const cfg = s.mas[i];
-      const show = s.enMA && cfg.on;
-      series.applyOptions({ visible: show, color: cfg.color });
-      series.setData(show ? movingAverage(bars, cfg.len, cfg.type) : []);
-    });
+      const vw = s.enVWAP ? vwap(bars, s.vwapMult) : { vwap: [], upper: [], lower: [] };
+      ov.vwap.applyOptions({ visible: s.enVWAP });
+      ov.vwapUp.applyOptions({ visible: s.enVWAP });
+      ov.vwapLo.applyOptions({ visible: s.enVWAP });
+      ov.vwap.setData(vw.vwap);
+      ov.vwapUp.setData(vw.upper);
+      ov.vwapLo.setData(vw.lower);
 
-    const vw = s.enVWAP ? vwap(bars, s.vwapMult) : { vwap: [], upper: [], lower: [] };
-    ov.vwap.applyOptions({ visible: s.enVWAP });
-    ov.vwapUp.applyOptions({ visible: s.enVWAP });
-    ov.vwapLo.applyOptions({ visible: s.enVWAP });
-    ov.vwap.setData(vw.vwap);
-    ov.vwapUp.setData(vw.upper);
-    ov.vwapLo.setData(vw.lower);
+      ov.avwap.applyOptions({ visible: s.enAVWAP });
+      ov.avwap.setData(s.enAVWAP ? anchoredVwap(bars, anchorTs(s.avwapDate, bars)) : []);
 
-    ov.avwap.applyOptions({ visible: s.enAVWAP });
-    ov.avwap.setData(s.enAVWAP ? anchoredVwap(bars, anchorTs(s.avwapDate, bars)) : []);
-
-    const lv = s.enLevels
-      ? prevPeriodLevels(bars)
-      : { pdh: [], pdl: [], pwh: [], pwl: [] };
-    for (const [series, data] of [
-      [ov.pdh, lv.pdh],
-      [ov.pdl, lv.pdl],
-      [ov.pwh, lv.pwh],
-      [ov.pwl, lv.pwl],
-    ] as const) {
-      series.applyOptions({ visible: s.enLevels });
-      series.setData(data);
+      const lv = s.enLevels ? prevPeriodLevels(bars) : { pdh: [], pdl: [], pwh: [], pwl: [] };
+      for (const [seriesApi, data] of [
+        [ov.pdh, lv.pdh],
+        [ov.pdl, lv.pdl],
+        [ov.pwh, lv.pwh],
+        [ov.pwl, lv.pwl],
+      ] as const) {
+        seriesApi.applyOptions({ visible: s.enLevels });
+        seriesApi.setData(data);
+      }
     }
 
     if (rsiSeriesRef.current) {
       rsiSeriesRef.current.setData(s.enRSI ? rsi(bars, s.rsiLen) : []);
     }
+  }
+
+  // redrawRef holds the latest closure so the (symbol-scoped) WS handler never goes stale.
+  redrawRef.current = () => {
+    const displayed = aggregate(base1mRef.current, tfRef.current);
+    displayedRef.current = displayed;
+    seriesRef.current?.setData(displayed);
+    recomputeOverlays(displayed);
+    applyMarkers();
   };
+
+  function showRange(seconds: number | "all") {
+    const ts = chartRef.current?.timeScale();
+    const bars = displayedRef.current;
+    if (!ts || bars.length === 0) return;
+    if (seconds === "all") {
+      ts.fitContent();
+      return;
+    }
+    const to = bars[bars.length - 1].time as number;
+    ts.setVisibleRange({ from: (to - seconds) as Time, to: to as Time });
+  }
 
   // Build the price chart + overlay series once.
   useEffect(() => {
@@ -266,7 +318,10 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
 
     chart.subscribeClick((param) => {
       if (param.time === undefined) return;
-      markersRef.current = [...markersRef.current, makeMarker(param.time, sideRef.current, true)];
+      rawMarkersRef.current = [
+        ...rawMarkersRef.current,
+        { kind: "signal" as const, time: Number(param.time), side: sideRef.current, manual: true },
+      ];
       applyMarkers();
       setManualCount((n) => n + 1);
     });
@@ -324,7 +379,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       syncingRef.current = false;
     });
 
-    recomputeRef.current();
+    rsiSeries.setData(settings.enRSI ? rsi(displayedRef.current, settings.rsiLen) : []);
     const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange();
     if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
 
@@ -338,8 +393,14 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   // Mirror settings into the ref and recompute overlays when they change.
   useEffect(() => {
     settingsRef.current = settings;
-    recomputeRef.current();
+    recomputeOverlays(displayedRef.current);
   }, [settings]);
+
+  // Re-aggregate and redraw when the timeframe changes.
+  useEffect(() => {
+    tfRef.current = tf;
+    redrawRef.current();
+  }, [tf]);
 
   // Connect the WebSocket and feed the chart.
   useEffect(() => {
@@ -358,7 +419,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       if (!series) return;
 
       if (msg.type === "snapshot") {
-        const data: Candle[] = msg.bars.map((b) => ({
+        base1mRef.current = msg.bars.map((b) => ({
           time: b.time as UTCTimestamp,
           open: b.open,
           high: b.high,
@@ -366,16 +427,13 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           close: b.close,
           volume: b.volume,
         }));
-        barsRef.current = data;
-        series.setData(data);
-        recomputeRef.current();
-        chartRef.current?.timeScale().fitContent();
         // A snapshot starts a fresh series — clear markers/feed so a reconnect doesn't
         // stack duplicate arrows from the replayed deterministic feed.
-        markersRef.current = [];
-        applyMarkers();
+        rawMarkersRef.current = [];
         setSignals([]);
         setManualCount(0);
+        redrawRef.current();
+        showRange(86_400); // default to the most recent day; use the range buttons to zoom out
       } else if (msg.type === "bar") {
         const bar: Candle = {
           time: msg.bar.time as UTCTimestamp,
@@ -385,28 +443,27 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           close: msg.bar.close,
           volume: msg.bar.volume,
         };
-        series.update(bar);
-        const bars = barsRef.current;
+        const bars = base1mRef.current;
         if (bars.length && bars[bars.length - 1].time === bar.time) {
           bars[bars.length - 1] = bar;
         } else {
           bars.push(bar);
         }
-        recomputeRef.current();
+        redrawRef.current();
       } else if (msg.type === "signal") {
         const s = msg.signal;
-        markersRef.current = [
-          ...markersRef.current,
-          makeMarker(s.time as UTCTimestamp, s.side, false, s.price),
-        ].slice(-100);
+        rawMarkersRef.current = [
+          ...rawMarkersRef.current,
+          { kind: "signal" as const, time: s.time, side: s.side, price: s.price, manual: false },
+        ].slice(-200);
         applyMarkers();
         setSignals((prev) => [s, ...prev].slice(0, 12));
       } else if (msg.type === "blocked") {
         const b = msg.blocked;
-        markersRef.current = [
-          ...markersRef.current,
-          makeBlockedMarker(b.time as UTCTimestamp, b.action),
-        ].slice(-100);
+        rawMarkersRef.current = [
+          ...rawMarkersRef.current,
+          { kind: "blocked" as const, time: b.time, action: b.action },
+        ].slice(-200);
         applyMarkers();
         setBlocked((prev) => [b, ...prev].slice(0, 8));
       } else if (msg.type === "lifecycle") {
@@ -420,7 +477,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   }, [symbol]);
 
   function clearMarkers() {
-    markersRef.current = [];
+    rawMarkersRef.current = [];
     applyMarkers();
     setManualCount(0);
   }
@@ -448,6 +505,26 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           )}
           {lifecycle && <LifecycleBadge lifecycle={lifecycle} />}
           <span className={`status status-${status}`}>● {status}</span>
+        </div>
+
+        <div className="chart-toolbar">
+          <span className="muted">TF</span>
+          {TIMEFRAMES.map((t) => (
+            <button
+              key={t.minutes}
+              className={tf === t.minutes ? "active" : ""}
+              onClick={() => setTf(t.minutes)}
+            >
+              {t.label}
+            </button>
+          ))}
+          <span className="divider" />
+          <span className="muted">Range</span>
+          {RANGES.map((r) => (
+            <button key={r.label} onClick={() => showRange(r.seconds)}>
+              {r.label}
+            </button>
+          ))}
         </div>
 
         <div className="marker-toolbar">

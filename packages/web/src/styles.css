@@ -151,6 +151,39 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1c2230;
+  flex-wrap: wrap;
+}
+
+.chart-toolbar button {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 4px 11px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.chart-toolbar button.active {
+  background: #2962ff;
+  border-color: #2962ff;
+  color: #fff;
+}
+
+.chart-toolbar .divider {
+  width: 1px;
+  height: 20px;
+  background: #232a3a;
+  margin: 0 6px;
+}
+
 .marker-toolbar {
   display: flex;
   align-items: center;

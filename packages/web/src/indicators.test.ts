@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { UTCTimestamp } from "lightweight-charts";
 import {
   type Candle,
+  aggregate,
   anchoredVwap,
   movingAverage,
   prevPeriodLevels,
@@ -89,6 +90,34 @@ describe("anchored VWAP", () => {
   it("accumulates only from the anchor time onward", () => {
     const r = anchoredVwap(series([10, 20, 30]), 60); // anchor at 2nd bar
     expect(values(r)).toEqual([20, 25]); // (20), then (20+30)/2
+  });
+});
+
+describe("aggregate", () => {
+  it("rolls 1-minute bars into higher-timeframe OHLCV buckets", () => {
+    // five 1-min bars (0,60,120,180,240); 5m bucket starts at 0 covers all five
+    const bars = [
+      c(0, 10, 12, 9, 100),
+      c(60, 11, 15, 10, 100),
+      c(120, 12, 13, 8, 100),
+      c(180, 9, 11, 7, 100),
+      c(240, 14, 16, 9, 100),
+    ];
+    const agg = aggregate(bars, 5);
+    expect(agg).toHaveLength(1);
+    expect(agg[0]).toMatchObject({
+      time: 0,
+      open: 10, // first open
+      high: 16, // max high
+      low: 7, // min low
+      close: 14, // last close
+      volume: 500, // summed
+    });
+  });
+
+  it("returns the input unchanged for 1-minute timeframe", () => {
+    const bars = series([1, 2, 3]);
+    expect(aggregate(bars, 1)).toEqual(bars);
   });
 });
 
