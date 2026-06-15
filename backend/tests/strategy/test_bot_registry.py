@@ -52,3 +52,18 @@ async def test_publish_rejects_bad_params(tenant_ctx: TenantId) -> None:
             await registry.publish(bot, strategy_id="sma_cross", params={"fast": 30, "slow": 5})
         assert bot.current_version == 0
         assert await registry.versions(bot.id) == []
+
+
+async def test_list_bots_filters_by_owner(tenant_ctx: TenantId) -> None:
+    async with UnitOfWork() as uow:
+        registry = BotRegistry(uow.session)
+        a1 = await registry.create_bot(name="A1", owner_id="owner-A")
+        await registry.create_bot(name="A2", owner_id="owner-A")
+        await registry.create_bot(name="B1", owner_id="owner-B")
+
+        mine = await registry.list_bots("owner-A")
+        assert {b.name for b in mine} == {"A1", "A2"}
+
+        fetched = await registry.get_bot(a1.id)
+        assert fetched is not None and fetched.name == "A1"
+        assert await registry.get_bot("nope") is None

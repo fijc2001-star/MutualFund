@@ -122,3 +122,17 @@ class BotRegistry:
         )
         result = await self._versions.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_bot(self, bot_id: str) -> Bot | None:
+        """A bot by id, scoped to the current tenant."""
+        return await self._bots.get(bot_id)
+
+    async def list_bots(self, owner_id: str) -> list[Bot]:
+        """A designer's bots for the current tenant, oldest → newest."""
+        stmt = (
+            select(Bot)
+            .where(Bot.tenant_id == TenantContext.get(), Bot.owner_id == owner_id)
+            .order_by(Bot.created_at)
+        )
+        result = await self._bots.session.execute(stmt)
+        return list(result.scalars().all())

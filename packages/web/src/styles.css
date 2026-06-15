@@ -37,6 +37,120 @@ body {
   font-size: 14px;
 }
 
+.nav {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
+  margin-left: 20px;
+}
+
+.nav button {
+  background: transparent;
+  color: #8b93a7;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.nav button.active {
+  color: #d1d4dc;
+  border-bottom-color: #2962ff;
+}
+
+.dash-symbols {
+  margin: 0 0 16px;
+}
+
+/* Designer Studio */
+.studio {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+}
+
+.studio h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+
+.studio-create {
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  padding: 16px;
+  height: fit-content;
+}
+
+.studio-create form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.studio-create label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #8b93a7;
+}
+
+.studio-create input,
+.studio-create select {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 14px;
+}
+
+.studio-create button[type="submit"] {
+  margin-top: 6px;
+  background: #2962ff;
+  border: 1px solid #2962ff;
+  color: #fff;
+  border-radius: 6px;
+  padding: 9px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.bots-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.bots-table th {
+  text-align: left;
+  color: #8b93a7;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1c2230;
+}
+
+.bots-table td {
+  padding: 10px;
+  border-bottom: 1px solid #131824;
+}
+
+.bots-table button {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
 .user-box {
   display: flex;
   align-items: center;

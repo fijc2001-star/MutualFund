@@ -1,29 +1,54 @@
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./auth";
+import { DesignerStudio } from "./DesignerStudio";
 import { Login } from "./Login";
 import { SignalChart } from "./SignalChart";
 
 const SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA"];
+const DESIGNER_ROLES = ["designer", "admin", "root_admin"];
 
 function Dashboard() {
-  const { principal, logout } = useAuth();
   const [symbol, setSymbol] = useState("AAPL");
+  return (
+    <>
+      <div className="symbol-picker dash-symbols">
+        {SYMBOLS.map((s) => (
+          <button key={s} className={s === symbol ? "active" : ""} onClick={() => setSymbol(s)}>
+            {s}
+          </button>
+        ))}
+      </div>
+      {/* key forces a clean remount (new WS + fresh chart) on symbol change */}
+      <SignalChart key={symbol} symbol={symbol} />
+    </>
+  );
+}
+
+function AuthedApp() {
+  const { principal, logout } = useAuth();
+  const [view, setView] = useState<"dashboard" | "designer">("dashboard");
+  const isDesigner = !!principal && DESIGNER_ROLES.includes(principal.role);
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1>MutualFund — Live Signal Prototype</h1>
-        <div className="symbol-picker">
-          {SYMBOLS.map((s) => (
+        <h1>MutualFund</h1>
+        <nav className="nav">
+          <button
+            className={view === "dashboard" ? "active" : ""}
+            onClick={() => setView("dashboard")}
+          >
+            Dashboard
+          </button>
+          {isDesigner && (
             <button
-              key={s}
-              className={s === symbol ? "active" : ""}
-              onClick={() => setSymbol(s)}
+              className={view === "designer" ? "active" : ""}
+              onClick={() => setView("designer")}
             >
-              {s}
+              Designer Studio
             </button>
-          ))}
-        </div>
+          )}
+        </nav>
         <div className="user-box">
           <span className="muted">
             {principal?.email} · {principal?.role}
@@ -31,15 +56,7 @@ function Dashboard() {
           <button onClick={() => void logout()}>Logout</button>
         </div>
       </header>
-      <p className="subtitle">
-        A live SMA-crossover <strong>bot</strong> (M3/M9) trading in the{" "}
-        <strong>real sandbox</strong> (M5): each signal is risk-checked and guardrailed (M6)
-        before it fills, every fill is recorded on the hash-chained ledger (M10), and the bot is
-        qualified into a lifecycle state (M4) — all streamed over WebSocket onto Lightweight
-        Charts.
-      </p>
-      {/* key forces a clean remount (new WS + fresh chart) on symbol change */}
-      <SignalChart key={symbol} symbol={symbol} />
+      {view === "designer" && isDesigner ? <DesignerStudio /> : <Dashboard />}
     </div>
   );
 }
@@ -53,7 +70,7 @@ function Shell() {
       </div>
     );
   }
-  return principal ? <Dashboard /> : <Login />;
+  return principal ? <AuthedApp /> : <Login />;
 }
 
 export function App() {

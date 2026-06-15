@@ -18,6 +18,7 @@ from .iam.oauth import init_providers
 from .iam.router import router as auth_router
 from .marketdata.router import router as marketdata_router
 from .realtime.router import router as realtime_router
+from .strategy.router import router as bots_router
 
 
 @asynccontextmanager
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(marketdata_router)
     app.include_router(realtime_router)
+    app.include_router(bots_router)
     return app
 
 
