@@ -60,7 +60,13 @@ body {
 
 .chart-layout {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+}
+
+.side-col {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
@@ -199,6 +205,76 @@ body {
 .chart-canvas {
   height: 460px;
   width: 100%;
+}
+
+.rsi-pane {
+  height: 130px;
+  width: 100%;
+  border-top: 1px solid #1c2230;
+}
+
+/* Indicators settings panel */
+.indicators {
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.indicators h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8b93a7;
+}
+
+.ind-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 10px;
+}
+.ind-head:first-of-type {
+  margin-top: 0;
+}
+
+.ind-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0 24px;
+}
+
+.ma-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0 24px;
+}
+
+.ma-row .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.indicators select,
+.indicators input[type="number"],
+.indicators input[type="date"] {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.ma-row input[type="number"] {
+  width: 56px;
 }
 
 .signal-feed {

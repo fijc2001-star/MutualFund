@@ -51,6 +51,8 @@ _SECONDS_PER_DAY = 86_400
 _SHORT = 9
 _LONG = 21
 _SPREAD = Decimal("0.02")
+# ~10 days of 1-min history so day/week-based indicators (Key Levels, VWAP) have context.
+_HISTORY_BARS = 14_400
 
 
 class SandboxSession:
@@ -123,7 +125,7 @@ class SandboxSession:
         return MarketSnapshot({self._instrument.key: quote})
 
     async def run(self, send: Send, *, interval: float, max_ticks: int | None = None) -> None:
-        history = self._feed.snapshot(60)
+        history = self._feed.snapshot(_HISTORY_BARS)
         self._closes = [b.close for b in history]
         await send(
             {

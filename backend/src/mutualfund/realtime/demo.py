@@ -17,6 +17,7 @@ class DemoBar:
     high: float
     low: float
     close: float
+    volume: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +58,9 @@ class DemoFeed:
         close = self._next_close()
         high = round(max(open_, close) + self._rng.uniform(0, 1.0), 2)
         low = round(min(open_, close) - self._rng.uniform(0, 1.0), 2)
-        bar = DemoBar(time=self._t, open=open_, high=high, low=low, close=close)
+        # Volume loosely scales with the bar's range, so VWAP/volume tools look alive.
+        volume = round(800 + abs(close - open_) * 600 + self._rng.uniform(0, 1500))
+        bar = DemoBar(time=self._t, open=open_, high=high, low=low, close=close, volume=volume)
         self._t += self._step
         self._closes.append(close)
         self._since_signal += 1

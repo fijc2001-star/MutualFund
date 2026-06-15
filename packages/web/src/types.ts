@@ -6,6 +6,7 @@ export interface DemoBar {
   high: number;
   low: number;
   close: number;
+  volume: number;
 }
 
 // Why a signal fired — streamed with each fill so a trade can always be explained (M9).
