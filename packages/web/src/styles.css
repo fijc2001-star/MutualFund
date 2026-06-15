@@ -127,13 +127,32 @@ body {
   accent-color: #2962ff;
 }
 
-.chart-toolbar input[type="date"] {
+.chart-toolbar input[type="date"],
+.chart-toolbar select {
   background: #161b26;
   color: #d1d4dc;
   border: 1px solid #232a3a;
   border-radius: 5px;
   padding: 3px 6px;
   font-size: 12px;
+}
+
+/* Mouse-cursor shape over the chart (override Lightweight Charts' canvas cursor). */
+.cur-crosshair,
+.cur-crosshair canvas {
+  cursor: crosshair !important;
+}
+.cur-default,
+.cur-default canvas {
+  cursor: default !important;
+}
+.cur-pointer,
+.cur-pointer canvas {
+  cursor: pointer !important;
+}
+.cur-grab,
+.cur-grab canvas {
+  cursor: grab !important;
 }
 
 /* Bot lifecycle badge (M4) */

@@ -37,12 +37,37 @@ const BACKTEST_URL = "http://localhost:8000/backtest";
 const MA_TYPES: MaType[] = ["SMA", "EMA", "WMA", "RMA", "HMA"];
 const SPEEDS = [1, 5, 25, 100]; // bars advanced per playback tick
 
+// minutes: 0 = Auto (timeframe derived from how far the chart is zoomed in/out).
 const TIMEFRAMES: { label: string; minutes: number }[] = [
+  { label: "Auto", minutes: 0 },
   { label: "1m", minutes: 1 },
   { label: "5m", minutes: 5 },
   { label: "15m", minutes: 15 },
   { label: "1h", minutes: 60 },
   { label: "1D", minutes: 1440 },
+];
+
+const TF_LADDER = [1, 5, 15, 60, 240, 1440]; // minutes Auto can choose from
+const AUTO_TARGET_BARS = 250; // aim for roughly this many candles on screen
+
+function tfLabel(minutes: number): string {
+  return { 1: "1m", 5: "5m", 15: "15m", 60: "1h", 240: "4h", 1440: "1D" }[minutes] ?? `${minutes}m`;
+}
+
+// Pick the smallest timeframe that keeps the visible span near AUTO_TARGET_BARS candles.
+function pickAutoTf(spanSeconds: number): number {
+  const perBar = spanSeconds / AUTO_TARGET_BARS;
+  for (const m of TF_LADDER) {
+    if (m * 60 >= perBar) return m;
+  }
+  return TF_LADDER[TF_LADDER.length - 1];
+}
+
+const CURSOR_SHAPES: { value: string; label: string }[] = [
+  { value: "crosshair", label: "Crosshair" },
+  { value: "default", label: "Arrow" },
+  { value: "pointer", label: "Pointer" },
+  { value: "grab", label: "Grab" },
 ];
 
 const RANGES: { label: string; seconds: number | "all" }[] = [
@@ -228,8 +253,12 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const [equity, setEquity] = useState<EquityPoint[]>([]);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
-  const [tf, setTf] = useState(1);
+  const [tf, setTf] = useState(1); // selected mode: 0 = Auto, else fixed minutes
   const tfRef = useRef(tf);
+  const [effTf, setEffTf] = useState(1); // effective aggregation timeframe (minutes)
+  const effectiveTfRef = useRef(1);
+  const [cursorShape, setCursorShape] = useState("crosshair");
+  const [magnet, setMagnet] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const settingsRef = useRef<Settings>(settings);
 
@@ -253,7 +282,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   }, [backtest]);
 
   function applyMarkers() {
-    const tfMin = tfRef.current;
+    const tfMin = effectiveTfRef.current;
     const all = base1mRef.current;
     const cutoff =
       backtestRef.current && cursorRef.current < all.length
@@ -323,7 +352,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   redrawRef.current = () => {
     const all = base1mRef.current;
     const bars = backtestRef.current ? all.slice(0, cursorRef.current + 1) : all;
-    const displayed = aggregate(bars, tfRef.current);
+    const displayed = aggregate(bars, effectiveTfRef.current);
     displayedRef.current = displayed;
     seriesRef.current?.setData(displayed);
     recomputeOverlays(displayed);
@@ -415,13 +444,22 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       setManualCount((n) => n + 1);
     });
 
-    // Keep the sub-panes' time scales in lockstep with the price chart.
+    // Keep the sub-panes in lockstep with the price chart, and (in Auto mode) re-pick the
+    // timeframe as the user zooms the chart in/out.
     chart.timeScale().subscribeVisibleLogicalRangeChange((range: LogicalRange | null) => {
-      if (syncingRef.current || !range) return;
-      syncingRef.current = true;
-      rsiChartRef.current?.timeScale().setVisibleLogicalRange(range);
-      equityChartRef.current?.timeScale().setVisibleLogicalRange(range);
-      syncingRef.current = false;
+      if (range && !syncingRef.current) {
+        syncingRef.current = true;
+        rsiChartRef.current?.timeScale().setVisibleLogicalRange(range);
+        equityChartRef.current?.timeScale().setVisibleLogicalRange(range);
+        syncingRef.current = false;
+      }
+      if (tfRef.current === 0) {
+        const vr = chart.timeScale().getVisibleRange();
+        if (vr) {
+          const picked = pickAutoTf(Number(vr.to) - Number(vr.from));
+          if (picked !== effectiveTfRef.current) setEffTf(picked);
+        }
+      }
     });
 
     return () => {
@@ -516,11 +554,29 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     recomputeOverlays(displayedRef.current);
   }, [settings]);
 
-  // Re-aggregate and redraw when the timeframe changes.
+  // Timeframe selection: a fixed tf, or Auto (tf === 0) which derives the tf from the zoom.
   useEffect(() => {
     tfRef.current = tf;
-    redrawRef.current();
+    if (tf !== 0) {
+      setEffTf(tf);
+    } else {
+      const vr = chartRef.current?.timeScale().getVisibleRange();
+      setEffTf(vr ? pickAutoTf(Number(vr.to) - Number(vr.from)) : effectiveTfRef.current);
+    }
   }, [tf]);
+
+  // Apply the effective aggregation timeframe.
+  useEffect(() => {
+    effectiveTfRef.current = effTf;
+    redrawRef.current();
+  }, [effTf]);
+
+  // Crosshair behaviour: Magnet snaps to price; Normal is free.
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      crosshair: { mode: magnet ? CrosshairMode.Magnet : CrosshairMode.Normal },
+    });
+  }, [magnet]);
 
   // Move the playback cursor → reveal up to it.
   useEffect(() => {
@@ -731,6 +787,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
               {t.label}
             </button>
           ))}
+          {tf === 0 && <span className="muted">{tfLabel(effTf)}</span>}
           <span className="divider" />
           <span className="muted">Range</span>
           {RANGES.map((r) => (
@@ -745,6 +802,22 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
             title="Backtest the bot over a selected window and play it bar by bar"
           >
             ⟲ Backtest
+          </button>
+          <span className="divider" />
+          <span className="muted">Cursor</span>
+          <select value={cursorShape} onChange={(e) => setCursorShape(e.target.value)}>
+            {CURSOR_SHAPES.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <button
+            className={magnet ? "active" : ""}
+            onClick={() => setMagnet((v) => !v)}
+            title="Snap the crosshair to price (magnet)"
+          >
+            Magnet
           </button>
         </div>
 
@@ -805,7 +878,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           <span className="muted">manual: {manualCount}</span>
         </div>
 
-        <div ref={containerRef} className="chart-canvas" />
+        <div ref={containerRef} className={`chart-canvas cur-${cursorShape}`} />
         {settings.enRSI && <div ref={rsiContainerRef} className="rsi-pane" />}
         {backtest && equity.length > 0 && <div className="pane-label">Backtest equity</div>}
         {backtest && equity.length > 0 && (
