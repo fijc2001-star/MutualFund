@@ -25,6 +25,10 @@ async def test_backtest_full_history(tenant_ctx: TenantId) -> None:
         times = [p["time"] for p in result.equity]
         assert times == sorted(times)
 
+        # the M10 record + evaluation span are exposed for qualification (M-C)
+        assert result.record.num_trades == result.perf["num_trades"]
+        assert result.evaluation_days >= 1
+
         await uow.rollback()
 
 

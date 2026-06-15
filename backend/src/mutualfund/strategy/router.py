@@ -13,10 +13,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ValidationError
 
+from ..backtest.service import BacktestService
 from ..foundation.uow import UnitOfWork
 from ..iam.deps import CurrentPrincipal, require_role
 from ..iam.roles import Principal, Role
 from ..lifecycle.lifecycle import BotLifecycle, BotState, IllegalTransitionError
+from ..lifecycle.qualification import QualificationInput, demo_policy
+from ..lifecycle.service import QualificationService
 from .models import Bot, BotRegistry, BotVersion
 from .registry import UnknownStrategyError, default_registry
 
@@ -72,6 +75,21 @@ class PublishRequest(BaseModel):
 class TransitionRequest(BaseModel):
     to: str
     reason: str = ""
+
+
+class CriterionResultDTO(BaseModel):
+    name: str
+    passed: bool
+    detail: str
+
+
+class QualifyResponse(BaseModel):
+    passed: bool
+    policy: str
+    policy_version: int
+    state: str
+    criteria: list[CriterionResultDTO]
+    perf: dict[str, Any]
 
 
 def _version_info(v: BotVersion) -> BotVersionInfo:
@@ -204,3 +222,57 @@ async def transition_bot(
         bot.state = current.state  # mirror lifecycle state onto the bot for listing
         await uow.commit()
     return _version_info(current)
+
+
+@router.post("/bots/{bot_id}/qualify", response_model=QualifyResponse)
+async def qualify_bot(bot_id: str, principal: DesignerPrincipal) -> QualifyResponse:
+    """Backtest the bot's current version and run the qualification gate, transitioning
+    Evaluation→Listed on a pass (or delisting on a fail). The bot must be in Evaluation."""
+    # 1) read the version under evaluation
+    async with UnitOfWork() as uow0:
+        registry = BotRegistry(uow0.session)
+        bot = await registry.get_bot(bot_id)
+        if bot is None or bot.owner_id != principal.user_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot not found")
+        versions = await registry.versions(bot_id)
+        current = next((v for v in versions if v.version == bot.current_version), None)
+        if current is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bot has no published version")
+        if current.state != BotState.EVALUATION.value:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Bot must be in evaluation to qualify")
+        symbol = current.universe[0] if current.universe else "AAPL"
+        strategy_id, params = current.strategy_id, dict(current.params)
+
+    # 2) backtest the bot's strategy for its PerformanceRecord (throwaway, rolled back)
+    async with UnitOfWork() as bt_uow:
+        result = await BacktestService(bt_uow.session).run(
+            symbol, strategy_id=strategy_id, params=params
+        )
+        await bt_uow.rollback()
+    qual_input = QualificationInput(result.record, evaluation_days=result.evaluation_days)
+
+    # 3) assess against the policy and move the lifecycle
+    async with UnitOfWork() as uow:
+        registry = BotRegistry(uow.session)
+        bot = await registry.get_bot(bot_id)
+        assert bot is not None
+        versions = await registry.versions(bot_id)
+        current = next(v for v in versions if v.version == bot.current_version)
+        outcome = await QualificationService(uow.session, policy=demo_policy()).evaluate(
+            current, qual_input, actor=principal.user_id
+        )
+        bot.state = current.state
+        await uow.commit()
+        state = current.state
+
+    return QualifyResponse(
+        passed=outcome.passed,
+        policy=outcome.policy_name,
+        policy_version=outcome.policy_version,
+        state=state,
+        criteria=[
+            CriterionResultDTO(name=c.name, passed=c.passed, detail=c.detail)
+            for c in outcome.criteria
+        ],
+        perf=result.perf,
+    )

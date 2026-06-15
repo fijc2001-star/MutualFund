@@ -151,6 +151,42 @@ body {
   font-size: 13px;
 }
 
+.qual-result {
+  margin-top: 18px;
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.qual-result h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+.qual-pass {
+  color: #26a69a;
+}
+.qual-fail {
+  color: #ef5350;
+}
+
+.qual-result ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.crit-ok {
+  color: #8b93a7;
+}
+.crit-bad {
+  color: #ef9a9a;
+}
+
 .user-box {
   display: flex;
   align-items: center;

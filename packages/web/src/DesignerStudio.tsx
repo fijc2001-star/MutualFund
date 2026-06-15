@@ -17,6 +17,20 @@ interface BotSummary {
   created_at: string;
 }
 
+interface Criterion {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+interface QualifyResponse {
+  passed: boolean;
+  policy: string;
+  policy_version: number;
+  state: string;
+  criteria: Criterion[];
+  perf: Record<string, number | null>;
+}
+
 export function DesignerStudio() {
   const { api } = useAuth();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -27,6 +41,7 @@ export function DesignerStudio() {
   const [universe, setUniverse] = useState("AAPL");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [qual, setQual] = useState<{ botId: string; data: QualifyResponse } | null>(null);
 
   async function refresh() {
     const r = await api("/bots");
@@ -107,6 +122,23 @@ export function DesignerStudio() {
     }
   }
 
+  async function qualify(id: string) {
+    setErr(null);
+    setBusy(true);
+    try {
+      const r = await api(`/bots/${id}/qualify`, { method: "POST" });
+      if (r.ok) {
+        setQual({ botId: id, data: (await r.json()) as QualifyResponse });
+        await refresh();
+      } else {
+        const d = await r.json().catch(() => ({}));
+        setErr(typeof d.detail === "string" ? d.detail : "Qualification failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="studio">
       <section className="studio-create">
@@ -178,11 +210,36 @@ export function DesignerStudio() {
                     {b.state === "draft" && (
                       <button onClick={() => void submitForEval(b.id)}>Submit for evaluation</button>
                     )}
+                    {b.state === "evaluation" && (
+                      <button disabled={busy} onClick={() => void qualify(b.id)}>
+                        Run qualification
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {qual && (
+          <div className="qual-result">
+            <h3 className={qual.data.passed ? "qual-pass" : "qual-fail"}>
+              Qualification: {qual.data.passed ? "✓ passed" : "✗ failed"} — {qual.data.policy} v
+              {qual.data.policy_version} → <strong>{qual.data.state}</strong>
+            </h3>
+            <ul>
+              {qual.data.criteria.map((c) => (
+                <li key={c.name} className={c.passed ? "crit-ok" : "crit-bad"}>
+                  {c.passed ? "✓" : "✗"} {c.name}: {c.detail}
+                </li>
+              ))}
+            </ul>
+            <p className="muted">
+              return {qual.data.perf.return_pct}% · trades {qual.data.perf.num_trades} · maxDD{" "}
+              {qual.data.perf.max_drawdown_pct}%
+            </p>
+          </div>
         )}
       </section>
     </div>

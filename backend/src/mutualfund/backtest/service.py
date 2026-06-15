@@ -24,7 +24,7 @@ from ..foundation.ids import new_id
 from ..foundation.instrument import AssetClass, Instrument
 from ..ledger.event import LedgerEvent, LedgerEventType
 from ..ledger.ledger import EventLedger
-from ..ledger.performance import PerformanceCalculator
+from ..ledger.performance import PerformanceCalculator, PerformanceRecord
 from ..marketdata.types import Quote
 from ..realtime.demo import DemoFeed, bar_dict
 from ..risk.guardrails import AccountRisk, GuardrailLimits, GuardrailPolicy
@@ -48,6 +48,8 @@ class BacktestResult:
     signals: list[dict[str, Any]]
     equity: list[dict[str, Any]]  # one { "time", "value" } per window bar, aligned with bars
     perf: dict[str, Any]
+    record: PerformanceRecord  # the M10 record (for qualification); not serialized to the wire
+    evaluation_days: int
 
 
 class BacktestService:
@@ -86,6 +88,7 @@ class BacktestService:
         symbol: str,
         *,
         strategy_id: str = "sma_cross",
+        params: dict[str, Any] | None = None,
         start_ts: int | None = None,
         end_ts: int | None = None,
     ) -> BacktestResult:
@@ -98,7 +101,7 @@ class BacktestService:
         stream = f"backtest:{symbol}:{new_id()}"
         ledger = EventLedger(self._session, self._clock)
         sandbox = SandboxLedger(ledger, stream, starting_cash=self._cash, clock=self._clock)
-        definition = BotDefinition(strategy_id, {"fast": _SHORT, "slow": _LONG})
+        definition = BotDefinition(strategy_id, params or {"fast": _SHORT, "slow": _LONG})
 
         closes: list[float] = []
         window_bars: list[dict[str, Any]] = []
@@ -181,6 +184,9 @@ class BacktestService:
         ]
         rec = self._calc.from_events([*fills, *marks], self._cash)
         last_equity = equity_pts[-1][1] if equity_pts else self._cash
+        evaluation_days = (
+            (equity_pts[-1][0] - equity_pts[0][0]) // 86_400 if len(equity_pts) >= 2 else 0
+        )
         perf = {
             "equity": float(last_equity),
             "net_pnl": float(rec.net_pnl),
@@ -197,6 +203,8 @@ class BacktestService:
             signals=signals_out,
             equity=[{"time": ts, "value": float(eq)} for ts, eq in equity_pts],
             perf=perf,
+            record=rec,
+            evaluation_days=evaluation_days,
         )
 
     def _signal_dict(self, time: int, signal: Signal, price: Decimal) -> dict[str, Any]:

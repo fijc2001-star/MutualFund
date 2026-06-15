@@ -145,3 +145,21 @@ def baseline_policy() -> QualificationPolicy:
             NetPositive(),
         ],
     )
+
+
+def demo_policy() -> QualificationPolicy:
+    """Relaxed gate for the prototype's short, deterministic demo history (~10 days).
+
+    The baseline's 30-day minimum can't pass on the demo feed; this keeps the *shape* of the
+    gate (enough trades, bounded drawdown, net positive) at thresholds the demo can clear.
+    """
+    return QualificationPolicy(
+        "demo",
+        1,
+        [
+            MinPeriod(min_days=1),
+            MinTrades(min_trades=20),
+            MaxDrawdownCeiling(Decimal("50")),
+            NetPositive(),
+        ],
+    )

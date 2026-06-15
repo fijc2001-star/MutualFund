@@ -14,6 +14,7 @@ from mutualfund.lifecycle.qualification import (
     QualificationInput,
     SharpeFloor,
     baseline_policy,
+    demo_policy,
 )
 
 
@@ -70,6 +71,14 @@ def test_baseline_policy_passes_strong_record() -> None:
     assert result.policy_name == "baseline"
     assert result.policy_version == 1
     assert result.failures == []
+
+
+def test_demo_policy_passes_a_modest_net_positive_record() -> None:
+    # Short period + low Sharpe but net positive with enough trades and bounded drawdown.
+    rec = _record(net_pnl="600", num_trades=30, max_dd="12", sharpe="0.05")
+    result = demo_policy().assess(_input(rec, days=8))
+    assert result.passed
+    assert result.policy_name == "demo"
 
 
 def test_baseline_policy_fails_and_reports_each_breach() -> None:
