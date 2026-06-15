@@ -17,6 +17,7 @@ from ..config import get_settings
 from ..foundation.ids import TenantId
 from ..foundation.tenant import TenantContext
 from ..foundation.uow import UnitOfWork
+from ..subscription.service import SubscriptionService
 from .demo import DemoFeed, bar_dict, signal_dict
 from .sandbox_session import SandboxSession
 
@@ -72,6 +73,45 @@ async def sandbox_stream(websocket: WebSocket) -> None:
         async with UnitOfWork() as uow:
             session = SandboxSession(uow, symbol, settings.sandbox_starting_cash)
             await session.run(websocket.send_json, interval=interval)
+    except WebSocketDisconnect:
+        return
+    except (asyncio.CancelledError, RuntimeError):
+        with contextlib.suppress(RuntimeError):
+            await websocket.close()
+    finally:
+        TenantContext.reset(token)
+
+
+@router.websocket("/ws/replay")
+async def replay_stream(websocket: WebSocket) -> None:
+    """Replay a bot's persisted signal stream since the subscription started.
+
+    Reads the bot's hash-chained SIGNAL events from the ledger (not a live recomputation)
+    and streams the candle history + every signal so the client can scrub the full record.
+    """
+    await websocket.accept()
+    symbol = websocket.query_params.get("symbol", "AAPL")
+
+    settings = get_settings()
+    token = TenantContext.set(TenantId(settings.default_tenant_id))
+    try:
+        async with UnitOfWork() as uow:
+            svc = SubscriptionService(uow.session)
+            sub = await svc.subscribe(symbol)
+            bars, signals = await svc.replay(sub)
+            await uow.commit()  # persist the subscription + materialized signal stream
+
+        await websocket.send_json({"type": "snapshot", "symbol": symbol, "bars": bars})
+        for signal in signals:
+            await websocket.send_json({"type": "signal", "signal": signal})
+        await websocket.send_json(
+            {
+                "type": "replay_done",
+                "count": len(signals),
+                "since": int(sub.started_at.timestamp()),
+            }
+        )
+        await websocket.close()
     except WebSocketDisconnect:
         return
     except (asyncio.CancelledError, RuntimeError):

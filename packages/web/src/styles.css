@@ -119,6 +119,7 @@ body {
 .status-connecting { color: #f0b429; }
 .status-live { color: #26a69a; }
 .status-closed { color: #ef5350; }
+.status-replay { color: #ab47bc; }
 
 /* Bot lifecycle badge (M4) */
 .lifecycle {

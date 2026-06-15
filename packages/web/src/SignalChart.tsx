@@ -31,6 +31,7 @@ import {
 } from "./indicators";
 
 const WS_URL = "ws://localhost:8000/ws/sandbox";
+const REPLAY_URL = "ws://localhost:8000/ws/replay";
 const MA_TYPES: MaType[] = ["SMA", "EMA", "WMA", "RMA", "HMA"];
 
 const TIMEFRAMES: { label: string; minutes: number }[] = [
@@ -48,7 +49,7 @@ const RANGES: { label: string; seconds: number | "all" }[] = [
   { label: "All", seconds: "all" },
 ];
 
-type Status = "connecting" | "live" | "closed";
+type Status = "connecting" | "live" | "closed" | "replay";
 type Side = "buy" | "sell";
 
 // Markers are kept at their raw (1-minute) time and snapped to the active timeframe's
@@ -192,6 +193,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const [perf, setPerf] = useState<SandboxPerf | null>(null);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
+  const [replay, setReplay] = useState(false);
   const [tf, setTf] = useState(1);
   const tfRef = useRef(tf);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -404,13 +406,15 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
 
   // Connect the WebSocket and feed the chart.
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}?symbol=${encodeURIComponent(symbol)}`);
+    const base = replay ? REPLAY_URL : WS_URL;
+    const ws = new WebSocket(`${base}?symbol=${encodeURIComponent(symbol)}`);
     setStatus("connecting");
     setPerf(null);
     setBlocked([]);
     setLifecycle(null);
-    ws.onopen = () => setStatus("live");
-    ws.onclose = () => setStatus("closed");
+    ws.onopen = () => setStatus((s) => (s === "replay" ? "replay" : "live"));
+    // Replay closes the socket after sending; keep the "replay" label rather than "closed".
+    ws.onclose = () => setStatus((s) => (s === "replay" ? "replay" : "closed"));
     ws.onerror = () => setStatus("closed");
 
     ws.onmessage = (event) => {
@@ -455,7 +459,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         rawMarkersRef.current = [
           ...rawMarkersRef.current,
           { kind: "signal" as const, time: s.time, side: s.side, price: s.price, manual: false },
-        ].slice(-200);
+        ].slice(-2000);
         applyMarkers();
         setSignals((prev) => [s, ...prev].slice(0, 12));
       } else if (msg.type === "blocked") {
@@ -463,18 +467,20 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         rawMarkersRef.current = [
           ...rawMarkersRef.current,
           { kind: "blocked" as const, time: b.time, action: b.action },
-        ].slice(-200);
+        ].slice(-2000);
         applyMarkers();
         setBlocked((prev) => [b, ...prev].slice(0, 8));
       } else if (msg.type === "lifecycle") {
         setLifecycle(msg.lifecycle);
       } else if (msg.type === "perf") {
         setPerf(msg.perf);
+      } else if (msg.type === "replay_done") {
+        setStatus("replay");
       }
     };
 
     return () => ws.close();
-  }, [symbol]);
+  }, [symbol, replay]);
 
   function clearMarkers() {
     rawMarkersRef.current = [];
@@ -525,6 +531,14 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
               {r.label}
             </button>
           ))}
+          <span className="divider" />
+          <button
+            className={replay ? "active" : ""}
+            onClick={() => setReplay((v) => !v)}
+            title="Replay this bot's signal history since the subscription started"
+          >
+            ⟲ Replay
+          </button>
         </div>
 
         <div className="marker-toolbar">

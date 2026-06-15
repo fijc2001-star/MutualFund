@@ -65,4 +65,5 @@ export type DemoMessage =
   | { type: "signal"; signal: DemoSignal }
   | { type: "perf"; perf: SandboxPerf }
   | { type: "blocked"; blocked: BlockedOrder }
-  | { type: "lifecycle"; lifecycle: LifecycleState };
+  | { type: "lifecycle"; lifecycle: LifecycleState }
+  | { type: "replay_done"; count: number; since: number };
