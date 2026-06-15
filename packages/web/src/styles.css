@@ -151,6 +151,80 @@ body {
   font-size: 13px;
 }
 
+/* Portfolio */
+.portfolio {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+}
+
+.portfolio h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+
+.pf-controls {
+  background: #0e1117;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+  padding: 16px;
+  height: fit-content;
+}
+
+.pf-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #8b93a7;
+  margin-bottom: 12px;
+}
+
+.pf-controls input[type="number"] {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
+.pf-controls > button {
+  margin-top: 12px;
+  width: 100%;
+  background: #2962ff;
+  border: 1px solid #2962ff;
+  color: #fff;
+  border-radius: 6px;
+  padding: 9px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pf-chart {
+  height: 320px;
+  width: 100%;
+  border: 1px solid #1c2230;
+  border-radius: 10px;
+}
+
+.pf-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.pf-stats .pnl {
+  font-weight: 700;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-result .bots-table {
+  margin-top: 16px;
+}
+
 .qual-result {
   margin-top: 18px;
   background: #0e1117;

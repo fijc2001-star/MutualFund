@@ -6,6 +6,7 @@ flips. Seeded RNG keeps it testable.
 
 from __future__ import annotations
 
+import hashlib
 import random
 from dataclasses import asdict, dataclass
 
@@ -44,7 +45,10 @@ class DemoFeed:
         self._t = start_time
         self._step = step_seconds
         self._price = start_price
-        self._rng = random.Random(seed if seed is not None else hash(symbol) & 0xFFFF)
+        # Stable per-symbol seed (hashlib, not the per-process-randomized built-in hash())
+        # so the demo feed is reproducible across server restarts.
+        symbol_seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
+        self._rng = random.Random(seed if seed is not None else symbol_seed)
         self._closes: list[float] = []
         self._since_signal = 0
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AuthProvider, useAuth } from "./auth";
 import { DesignerStudio } from "./DesignerStudio";
 import { Login } from "./Login";
+import { Portfolio } from "./Portfolio";
 import { SignalChart } from "./SignalChart";
 
 const SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA"];
@@ -26,7 +27,7 @@ function Dashboard() {
 
 function AuthedApp() {
   const { principal, logout } = useAuth();
-  const [view, setView] = useState<"dashboard" | "designer">("dashboard");
+  const [view, setView] = useState<"dashboard" | "designer" | "portfolio">("dashboard");
   const isDesigner = !!principal && DESIGNER_ROLES.includes(principal.role);
 
   return (
@@ -48,6 +49,14 @@ function AuthedApp() {
               Designer Studio
             </button>
           )}
+          {isDesigner && (
+            <button
+              className={view === "portfolio" ? "active" : ""}
+              onClick={() => setView("portfolio")}
+            >
+              Portfolio
+            </button>
+          )}
         </nav>
         <div className="user-box">
           <span className="muted">
@@ -56,7 +65,13 @@ function AuthedApp() {
           <button onClick={() => void logout()}>Logout</button>
         </div>
       </header>
-      {view === "designer" && isDesigner ? <DesignerStudio /> : <Dashboard />}
+      {view === "designer" && isDesigner ? (
+        <DesignerStudio />
+      ) : view === "portfolio" && isDesigner ? (
+        <Portfolio />
+      ) : (
+        <Dashboard />
+      )}
     </div>
   );
 }
