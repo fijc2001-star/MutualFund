@@ -1,9 +1,10 @@
-"""BacktestService — run a bot over its deterministic history and measure performance.
+"""BacktestService — backtest a bot over a chosen [start, end] window through the live pipeline.
 
-Drives the same components as the live sandbox session (engine → PositionSizer → RiskModel /
-GuardrailPolicy → SandboxLedger), but over the *whole* history rather than only live ticks,
-then derives a PerformanceRecord (M10) + an equity curve. Fills are written to a throwaway
-ledger stream that the caller rolls back, so a backtest leaves no trace.
+Indicators are warmed up on bars *before* the window; the bot starts flat at `start` and only
+executes + is measured within `[start, end]`. Drives the same components as the live sandbox
+(engine → PositionSizer → RiskModel / GuardrailPolicy → SandboxLedger) and derives a
+PerformanceRecord (M10) + a per-bar equity curve. Fills go to a throwaway ledger stream the
+caller rolls back, so a backtest leaves no trace.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..execution.orders import MarketSnapshot, Order, Side
+from ..execution.orders import Fill, MarketSnapshot, Order, Side
 from ..execution.sandbox import SandboxLedger
 from ..foundation.clock import Clock, SystemClock
 from ..foundation.ids import new_id
@@ -25,7 +26,7 @@ from ..ledger.event import LedgerEvent, LedgerEventType
 from ..ledger.ledger import EventLedger
 from ..ledger.performance import PerformanceCalculator
 from ..marketdata.types import Quote
-from ..realtime.demo import DemoFeed
+from ..realtime.demo import DemoFeed, bar_dict
 from ..risk.guardrails import AccountRisk, GuardrailLimits, GuardrailPolicy
 from ..risk.model import PortfolioState, RiskLimits, RiskModel
 from ..risk.sizing import FixedFractional, SizingContext
@@ -37,13 +38,16 @@ _DEFAULT_HISTORY_BARS = 14_400
 _SHORT = 9
 _LONG = 21
 _SPREAD = Decimal("0.02")
-_EQUITY_POINTS = 500  # downsample the curve to keep the payload small
 
 
 @dataclass(frozen=True, slots=True)
 class BacktestResult:
+    start: int
+    end: int
+    bars: list[dict[str, Any]]
+    signals: list[dict[str, Any]]
+    equity: list[dict[str, Any]]  # one { "time", "value" } per window bar, aligned with bars
     perf: dict[str, Any]
-    equity: list[dict[str, Any]]  # [{ "time": unix_s, "value": equity }]
 
 
 class BacktestService:
@@ -77,8 +81,19 @@ class BacktestService:
         )
         self._kill_switch = settings.risk_kill_switch
 
-    async def run(self, symbol: str, *, strategy_id: str = "sma_cross") -> BacktestResult:
-        bars = DemoFeed(symbol).snapshot(self._history)
+    async def run(
+        self,
+        symbol: str,
+        *,
+        strategy_id: str = "sma_cross",
+        start_ts: int | None = None,
+        end_ts: int | None = None,
+    ) -> BacktestResult:
+        all_bars = DemoFeed(symbol).snapshot(self._history)
+        first, last = all_bars[0].time, all_bars[-1].time
+        start = first if start_ts is None else max(first, min(start_ts, last))
+        end = last if end_ts is None else max(start, min(end_ts, last))
+
         instrument = Instrument(symbol, AssetClass.EQUITY)
         stream = f"backtest:{symbol}:{new_id()}"
         ledger = EventLedger(self._session, self._clock)
@@ -86,13 +101,18 @@ class BacktestService:
         definition = BotDefinition(strategy_id, {"fast": _SHORT, "slow": _LONG})
 
         closes: list[float] = []
-        equity_curve: list[tuple[int, Decimal]] = []
+        window_bars: list[dict[str, Any]] = []
+        equity_pts: list[tuple[int, Decimal]] = []
+        signals_out: list[dict[str, Any]] = []
         peak = self._cash
-        sample = max(1, len(bars) // _EQUITY_POINTS)
-        last = len(bars) - 1
 
-        for i, bar in enumerate(bars):
-            closes.append(bar.close)
+        for bar in all_bars:
+            if bar.time > end:
+                break
+            closes.append(bar.close)  # warm up indicators across the whole prefix
+            if bar.time < start:
+                continue
+
             snap = self._snapshot(instrument, bar.close)
             equity = sandbox.equity(snap)
             peak = max(peak, equity)
@@ -110,12 +130,14 @@ class BacktestService:
                 )
                 if not guard.halted:
                     for sig in signals:
-                        await self._execute(sandbox, instrument, sig, snap, equity)
+                        fill = await self._execute(sandbox, instrument, sig, snap, equity)
+                        if fill is not None:
+                            signals_out.append(self._signal_dict(bar.time, sig, fill.price))
 
-            if i % sample == 0 or i == last:
-                equity_curve.append((bar.time, sandbox.equity(snap)))
+            window_bars.append(bar_dict(bar))
+            equity_pts.append((bar.time, sandbox.equity(snap)))
 
-        return await self._result(ledger, stream, sandbox, equity_curve)
+        return await self._result(ledger, stream, start, end, window_bars, signals_out, equity_pts)
 
     async def _execute(
         self,
@@ -124,27 +146,30 @@ class BacktestService:
         signal: Signal,
         snap: MarketSnapshot,
         equity: Decimal,
-    ) -> None:
+    ) -> Fill | None:
         price = snap.quote(instrument).mid
         position = self._position(sandbox)
         qty = self._sizer.quantity(signal, SizingContext(instrument, price, equity, position))
         if qty <= 0:
-            return
+            return None
         side = Side.BUY if signal.action is Action.BUY else Side.SELL
         order = Order(instrument, side, qty)
         portfolio = PortfolioState(equity, sandbox.positions(), {instrument.key: price})
         if not self._risk.check(order, portfolio).approved:
-            return
-        await sandbox.submit(order, snap)
+            return None
+        return await sandbox.submit(order, snap)
 
     async def _result(
         self,
         ledger: EventLedger,
         stream: str,
-        sandbox: SandboxLedger,
-        equity_curve: list[tuple[int, Decimal]],
+        start: int,
+        end: int,
+        window_bars: list[dict[str, Any]],
+        signals_out: list[dict[str, Any]],
+        equity_pts: list[tuple[int, Decimal]],
     ) -> BacktestResult:
-        fills = await ledger.replay(stream)  # FILL events flushed during the run
+        fills = await ledger.replay(stream)
         marks = [
             LedgerEvent(
                 stream_id=stream,
@@ -152,16 +177,12 @@ class BacktestService:
                 payload={"equity": str(eq)},
                 ts=datetime.fromtimestamp(ts, UTC),
             )
-            for ts, eq in equity_curve
+            for ts, eq in equity_pts
         ]
         rec = self._calc.from_events([*fills, *marks], self._cash)
-        positions = sandbox.positions()
-        position = positions[0].quantity if positions else Decimal(0)
-        last_equity = equity_curve[-1][1] if equity_curve else self._cash
+        last_equity = equity_pts[-1][1] if equity_pts else self._cash
         perf = {
             "equity": float(last_equity),
-            "cash": float(sandbox.cash()),
-            "position": float(position),
             "net_pnl": float(rec.net_pnl),
             "return_pct": float(rec.return_pct),
             "max_drawdown_pct": float(rec.max_drawdown_pct),
@@ -170,9 +191,28 @@ class BacktestService:
             "sharpe": float(rec.sharpe) if rec.sharpe is not None else None,
         }
         return BacktestResult(
+            start=start,
+            end=end,
+            bars=window_bars,
+            signals=signals_out,
+            equity=[{"time": ts, "value": float(eq)} for ts, eq in equity_pts],
             perf=perf,
-            equity=[{"time": ts, "value": float(eq)} for ts, eq in equity_curve],
         )
+
+    def _signal_dict(self, time: int, signal: Signal, price: Decimal) -> dict[str, Any]:
+        rationale = signal.rationale
+        side = "buy" if signal.action is Action.BUY else "sell"
+        return {
+            "time": time,
+            "side": side,
+            "price": float(price),
+            "reason": rationale.thesis if rationale else side,
+            "rationale": {
+                "thesis": rationale.thesis if rationale else "",
+                "indicators": rationale.indicators if rationale else [],
+                "invalidation": rationale.invalidation if rationale else None,
+            },
+        }
 
     def _snapshot(self, instrument: Instrument, close: float) -> MarketSnapshot:
         c = Decimal(str(close))

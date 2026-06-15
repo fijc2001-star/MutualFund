@@ -119,7 +119,22 @@ body {
 .status-connecting { color: #f0b429; }
 .status-live { color: #26a69a; }
 .status-closed { color: #ef5350; }
-.status-replay { color: #ab47bc; }
+.status-backtest { color: #ab47bc; }
+
+.chart-toolbar .scrubber {
+  flex: 1 1 160px;
+  min-width: 120px;
+  accent-color: #2962ff;
+}
+
+.chart-toolbar input[type="date"] {
+  background: #161b26;
+  color: #d1d4dc;
+  border: 1px solid #232a3a;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
 
 /* Bot lifecycle badge (M4) */
 .lifecycle {

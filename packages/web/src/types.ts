@@ -26,8 +26,8 @@ export interface DemoSignal {
 
 export interface SandboxPerf {
   equity: number;
-  cash: number;
-  position: number;
+  cash?: number; // live only
+  position?: number; // live only
   net_pnl: number;
   return_pct: number;
   max_drawdown_pct: number;

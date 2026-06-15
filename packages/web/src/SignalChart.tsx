@@ -33,8 +33,9 @@ import {
 } from "./indicators";
 
 const WS_URL = "ws://localhost:8000/ws/sandbox";
-const REPLAY_URL = "ws://localhost:8000/ws/replay";
+const BACKTEST_URL = "http://localhost:8000/backtest";
 const MA_TYPES: MaType[] = ["SMA", "EMA", "WMA", "RMA", "HMA"];
+const SPEEDS = [1, 5, 25, 100]; // bars advanced per playback tick
 
 const TIMEFRAMES: { label: string; minutes: number }[] = [
   { label: "1m", minutes: 1 },
@@ -58,8 +59,17 @@ const HTF_OPTIONS: { label: string; minutes: number }[] = [
   { label: "1D", minutes: 1440 },
 ];
 
-type Status = "connecting" | "live" | "closed" | "replay";
+type Status = "connecting" | "live" | "closed" | "backtest";
 type Side = "buy" | "sell";
+
+interface BacktestResponse {
+  start: number;
+  end: number;
+  bars: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
+  signals: DemoSignal[];
+  equity: EquityPoint[];
+  perf: SandboxPerf;
+}
 
 // Markers are kept at their raw (1-minute) time and snapped to the active timeframe's
 // bucket at render time, so a signal still lands on a candle after the timeframe changes.
@@ -131,6 +141,10 @@ function bucketTime(t: number, tfMinutes: number): UTCTimestamp {
   return (tfMinutes <= 1 ? t : Math.floor(t / tf) * tf) as UTCTimestamp;
 }
 
+function dayStartUnix(dateStr: string): number {
+  return Math.floor(Date.parse(`${dateStr}T00:00:00Z`) / 1000);
+}
+
 function makeMarker(time: Time, side: Side, manual: boolean, price?: number): SeriesMarker<Time> {
   // Buy → green up-arrow below the bar; Sell → red down-arrow above the bar.
   const text = manual
@@ -188,19 +202,21 @@ function anchorTs(dateStr: string, bars: Candle[]): number {
 export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rsiContainerRef = useRef<HTMLDivElement>(null);
+  const equityContainerRef = useRef<HTMLDivElement>(null);
 
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const overlaysRef = useRef<Overlays | null>(null);
   const rsiChartRef = useRef<IChartApi | null>(null);
   const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const equityContainerRef = useRef<HTMLDivElement>(null);
   const equityChartRef = useRef<IChartApi | null>(null);
+  const equitySeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const syncingRef = useRef(false);
 
-  const base1mRef = useRef<Candle[]>([]); // raw 1-minute bars (source of truth)
+  const base1mRef = useRef<Candle[]>([]); // 1-minute bars: live feed, or the backtest window
   const displayedRef = useRef<Candle[]>([]); // aggregated to the active timeframe
   const rawMarkersRef = useRef<RawMarker[]>([]);
+  const equityRef = useRef<EquityPoint[]>([]); // full backtest equity (aligned with base1m)
   const sideRef = useRef<Side>("buy");
   const redrawRef = useRef<() => void>(() => {});
 
@@ -212,23 +228,44 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
   const [equity, setEquity] = useState<EquityPoint[]>([]);
   const [side, setSide] = useState<Side>("buy");
   const [manualCount, setManualCount] = useState(0);
-  const [replay, setReplay] = useState(false);
   const [tf, setTf] = useState(1);
   const tfRef = useRef(tf);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const settingsRef = useRef<Settings>(settings);
 
+  // Backtest mode + playback.
+  const [backtest, setBacktest] = useState(false);
+  const backtestRef = useRef(false);
+  const [cursor, setCursor] = useState(0);
+  const cursorRef = useRef(0);
+  const [barCount, setBarCount] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(5);
+  const [btStart, setBtStart] = useState("");
+  const [btEnd, setBtEnd] = useState("");
+  const [btLoading, setBtLoading] = useState(false);
+
   useEffect(() => {
     sideRef.current = side;
   }, [side]);
+  useEffect(() => {
+    backtestRef.current = backtest;
+  }, [backtest]);
 
   function applyMarkers() {
     const tfMin = tfRef.current;
-    const markers = rawMarkersRef.current.map((r) =>
-      r.kind === "blocked"
-        ? makeBlockedMarker(bucketTime(r.time, tfMin), r.action)
-        : makeMarker(bucketTime(r.time, tfMin), r.side, r.manual, r.price),
-    );
+    const all = base1mRef.current;
+    const cutoff =
+      backtestRef.current && cursorRef.current < all.length
+        ? all[cursorRef.current].time
+        : Number.POSITIVE_INFINITY;
+    const markers = rawMarkersRef.current
+      .filter((r) => r.time <= cutoff)
+      .map((r) =>
+        r.kind === "blocked"
+          ? makeBlockedMarker(bucketTime(r.time, tfMin), r.action)
+          : makeMarker(bucketTime(r.time, tfMin), r.side, r.manual, r.price),
+      );
     seriesRef.current?.setMarkers(sortByTime(markers));
   }
 
@@ -281,13 +318,24 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     }
   }
 
-  // redrawRef holds the latest closure so the (symbol-scoped) WS handler never goes stale.
+  // redrawRef holds the latest closure so async/WS handlers never go stale. In backtest mode
+  // it reveals bars/markers/equity only up to the playback cursor.
   redrawRef.current = () => {
-    const displayed = aggregate(base1mRef.current, tfRef.current);
+    const all = base1mRef.current;
+    const bars = backtestRef.current ? all.slice(0, cursorRef.current + 1) : all;
+    const displayed = aggregate(bars, tfRef.current);
     displayedRef.current = displayed;
     seriesRef.current?.setData(displayed);
     recomputeOverlays(displayed);
     applyMarkers();
+    if (equitySeriesRef.current) {
+      const eq = backtestRef.current
+        ? equityRef.current.slice(0, cursorRef.current + 1)
+        : equityRef.current;
+      equitySeriesRef.current.setData(
+        eq.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+      );
+    }
   };
 
   function showRange(seconds: number | "all") {
@@ -421,7 +469,7 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       syncingRef.current = false;
     });
 
-    rsiSeries.setData(settings.enRSI ? rsi(displayedRef.current, settings.rsiLen) : []);
+    redrawRef.current();
     const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange();
     if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
 
@@ -432,9 +480,9 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     };
   }, [settings.enRSI]);
 
-  // Backtest equity-curve sub-pane (replay mode only), synced to the price chart.
+  // Backtest equity-curve sub-pane, synced to the price chart; fed (sliced) by redraw().
   useEffect(() => {
-    if (!replay || equity.length === 0 || !equityContainerRef.current) return;
+    if (!backtest || equity.length === 0 || !equityContainerRef.current) return;
     const chart = createChart(equityContainerRef.current, {
       autoSize: true,
       layout: { background: { color: "#0e1117" }, textColor: "#8b93a7" },
@@ -448,17 +496,19 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
       lastValueVisible: true,
       title: "Equity",
     });
-    eqSeries.setData(equity.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
     equityChartRef.current = chart;
+    equitySeriesRef.current = eqSeries;
 
+    redrawRef.current(); // fill the curve up to the current cursor
     const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange();
     if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
 
     return () => {
       chart.remove();
       equityChartRef.current = null;
+      equitySeriesRef.current = null;
     };
-  }, [replay, equity]);
+  }, [backtest, equity]);
 
   // Mirror settings into the ref and recompute overlays when they change.
   useEffect(() => {
@@ -472,18 +522,40 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
     redrawRef.current();
   }, [tf]);
 
-  // Connect the WebSocket and feed the chart.
+  // Move the playback cursor → reveal up to it.
   useEffect(() => {
-    const base = replay ? REPLAY_URL : WS_URL;
-    const ws = new WebSocket(`${base}?symbol=${encodeURIComponent(symbol)}`);
+    cursorRef.current = cursor;
+    redrawRef.current();
+  }, [cursor]);
+
+  // Playback: advance the cursor while playing.
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => {
+      setCursor((c) => {
+        const max = base1mRef.current.length - 1;
+        const next = c + speed;
+        if (next >= max) {
+          setPlaying(false);
+          return max;
+        }
+        return next;
+      });
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [playing, speed]);
+
+  // Live mode: stream the sandbox over a WebSocket (skipped while backtesting).
+  useEffect(() => {
+    if (backtest) return;
+    const ws = new WebSocket(`${WS_URL}?symbol=${encodeURIComponent(symbol)}`);
     setStatus("connecting");
     setPerf(null);
     setEquity([]);
     setBlocked([]);
     setLifecycle(null);
-    ws.onopen = () => setStatus((s) => (s === "replay" ? "replay" : "live"));
-    // Replay closes the socket after sending; keep the "replay" label rather than "closed".
-    ws.onclose = () => setStatus((s) => (s === "replay" ? "replay" : "closed"));
+    ws.onopen = () => setStatus("live");
+    ws.onclose = () => setStatus((s) => (s === "live" || s === "connecting" ? "closed" : s));
     ws.onerror = () => setStatus("closed");
 
     ws.onmessage = (event) => {
@@ -500,13 +572,11 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           close: b.close,
           volume: b.volume,
         }));
-        // A snapshot starts a fresh series — clear markers/feed so a reconnect doesn't
-        // stack duplicate arrows from the replayed deterministic feed.
         rawMarkersRef.current = [];
         setSignals([]);
         setManualCount(0);
         redrawRef.current();
-        showRange(86_400); // default to the most recent day; use the range buttons to zoom out
+        showRange(86_400); // default to the most recent day
       } else if (msg.type === "bar") {
         const bar: Candle = {
           time: msg.bar.time as UTCTimestamp,
@@ -543,25 +613,85 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
         setLifecycle(msg.lifecycle);
       } else if (msg.type === "perf") {
         setPerf(msg.perf);
-      } else if (msg.type === "equity") {
-        setEquity(msg.equity);
-      } else if (msg.type === "replay_done") {
-        setStatus("replay");
       }
     };
 
     return () => ws.close();
-  }, [symbol, replay]);
+  }, [symbol, backtest]);
+
+  // Backtest mode: fetch the window once, then play it client-side.
+  useEffect(() => {
+    if (!backtest) return;
+    let cancelled = false;
+    setBtLoading(true);
+    setStatus("connecting");
+    const params = new URLSearchParams({ symbol });
+    if (btStart) params.set("start", String(dayStartUnix(btStart)));
+    if (btEnd) params.set("end", String(dayStartUnix(btEnd) + 86_399));
+
+    fetch(`${BACKTEST_URL}?${params.toString()}`)
+      .then((r) => r.json() as Promise<BacktestResponse>)
+      .then((data) => {
+        if (cancelled) return;
+        base1mRef.current = data.bars.map((b) => ({
+          time: b.time as UTCTimestamp,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+          volume: b.volume,
+        }));
+        rawMarkersRef.current = data.signals.map((s) => ({
+          kind: "signal" as const,
+          time: s.time,
+          side: s.side,
+          price: s.price,
+          manual: false,
+        }));
+        equityRef.current = data.equity;
+        setEquity(data.equity);
+        setPerf(data.perf);
+        setSignals(data.signals.slice(-12).reverse());
+        const lastIdx = Math.max(0, base1mRef.current.length - 1);
+        setBarCount(base1mRef.current.length);
+        cursorRef.current = lastIdx;
+        setCursor(lastIdx);
+        setPlaying(false);
+        setStatus("backtest");
+        redrawRef.current();
+        showRange("all");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("closed");
+      })
+      .finally(() => {
+        if (!cancelled) setBtLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backtest, symbol, btStart, btEnd]);
 
   function clearMarkers() {
-    rawMarkersRef.current = [];
+    rawMarkersRef.current = rawMarkersRef.current.filter((r) => r.kind !== "signal" || !r.manual);
     applyMarkers();
     setManualCount(0);
+  }
+
+  function step(delta: number) {
+    setPlaying(false);
+    setCursor((c) => Math.max(0, Math.min(barCount - 1, c + delta)));
   }
 
   const patch = (p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p }));
   const patchMa = (i: number, p: Partial<MaCfg>) =>
     setSettings((s) => ({ ...s, mas: s.mas.map((m, j) => (j === i ? { ...m, ...p } : m)) }));
+
+  const runPnl =
+    backtest && equity.length > 0 && cursor < equity.length
+      ? equity[cursor].value - equity[0].value
+      : null;
 
   return (
     <div className="chart-layout">
@@ -575,7 +705,9 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
                 {perf.net_pnl.toFixed(2)} ({perf.return_pct.toFixed(2)}%)
               </span>
               <span className="perf-meta">
-                equity ${perf.equity.toFixed(0)} · pos {perf.position} · trades{" "}
+                equity ${perf.equity.toFixed(0)}
+                {perf.position !== undefined && ` · pos ${perf.position}`}
+                {" · trades "}
                 {perf.num_trades} · maxDD {perf.max_drawdown_pct.toFixed(1)}%
                 {perf.win_rate !== undefined && ` · win ${(perf.win_rate * 100).toFixed(0)}%`}
                 {perf.sharpe !== undefined &&
@@ -608,13 +740,55 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
           ))}
           <span className="divider" />
           <button
-            className={replay ? "active" : ""}
-            onClick={() => setReplay((v) => !v)}
-            title="Replay this bot's signal history since the subscription started"
+            className={backtest ? "active" : ""}
+            onClick={() => setBacktest((v) => !v)}
+            title="Backtest the bot over a selected window and play it bar by bar"
           >
-            ⟲ Replay
+            ⟲ Backtest
           </button>
         </div>
+
+        {backtest && (
+          <div className="chart-toolbar">
+            <button onClick={() => step(-1)} title="Step back">
+              ◀
+            </button>
+            <button onClick={() => setPlaying((p) => !p)} title="Play / pause">
+              {playing ? "⏸" : "▶"}
+            </button>
+            <button onClick={() => step(1)} title="Step forward">
+              ▶|
+            </button>
+            <input
+              className="scrubber"
+              type="range"
+              min={0}
+              max={Math.max(0, barCount - 1)}
+              value={cursor}
+              onChange={(e) => {
+                setPlaying(false);
+                setCursor(Number(e.target.value));
+              }}
+            />
+            <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+              {SPEEDS.map((s) => (
+                <option key={s} value={s}>
+                  {s}×
+                </option>
+              ))}
+            </select>
+            <span className="muted">
+              {btLoading ? "loading…" : `bar ${cursor + 1}/${barCount}`}
+              {runPnl !== null &&
+                ` · P/L ${runPnl >= 0 ? "+" : ""}${runPnl.toFixed(2)}`}
+            </span>
+            <span className="divider" />
+            <span className="muted">From</span>
+            <input type="date" value={btStart} onChange={(e) => setBtStart(e.target.value)} />
+            <span className="muted">to</span>
+            <input type="date" value={btEnd} onChange={(e) => setBtEnd(e.target.value)} />
+          </div>
+        )}
 
         <div className="marker-toolbar">
           <span className="muted">Markers — click chart to drop:</span>
@@ -633,10 +807,10 @@ export function SignalChart({ symbol = "AAPL" }: { symbol?: string }) {
 
         <div ref={containerRef} className="chart-canvas" />
         {settings.enRSI && <div ref={rsiContainerRef} className="rsi-pane" />}
-        {replay && equity.length > 0 && (
-          <div className="pane-label">Backtest equity</div>
+        {backtest && equity.length > 0 && <div className="pane-label">Backtest equity</div>}
+        {backtest && equity.length > 0 && (
+          <div ref={equityContainerRef} className="equity-pane" />
         )}
-        {replay && equity.length > 0 && <div ref={equityContainerRef} className="equity-pane" />}
       </div>
 
       <aside className="side-col">

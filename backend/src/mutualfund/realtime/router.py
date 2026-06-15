@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -79,6 +80,35 @@ async def sandbox_stream(websocket: WebSocket) -> None:
     except (asyncio.CancelledError, RuntimeError):
         with contextlib.suppress(RuntimeError):
             await websocket.close()
+    finally:
+        TenantContext.reset(token)
+
+
+@router.get("/backtest")
+async def backtest_window(
+    symbol: str = "AAPL", start: int | None = None, end: int | None = None
+) -> dict[str, Any]:
+    """Backtest a bot over an optional [start, end] window (unix seconds).
+
+    Returns the window's candles, executed signals, per-bar equity curve, and performance —
+    everything the client needs to play the period back bar by bar. Runs in a rolled-back
+    unit of work, so it persists nothing.
+    """
+    settings = get_settings()
+    token = TenantContext.set(TenantId(settings.default_tenant_id))
+    try:
+        async with UnitOfWork() as uow:
+            result = await BacktestService(uow.session).run(symbol, start_ts=start, end_ts=end)
+            await uow.rollback()
+        return {
+            "symbol": symbol,
+            "start": result.start,
+            "end": result.end,
+            "bars": result.bars,
+            "signals": result.signals,
+            "equity": result.equity,
+            "perf": result.perf,
+        }
     finally:
         TenantContext.reset(token)
 
