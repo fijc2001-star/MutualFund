@@ -2,6 +2,8 @@ import { useState } from "react";
 import { AuthProvider, useAuth } from "./auth";
 import { DesignerStudio } from "./DesignerStudio";
 import { Login } from "./Login";
+import { Marketplace } from "./Marketplace";
+import { MySubscriptions } from "./MySubscriptions";
 import { Portfolio } from "./Portfolio";
 import { SignalChart } from "./SignalChart";
 
@@ -27,7 +29,9 @@ function Dashboard() {
 
 function AuthedApp() {
   const { principal, logout } = useAuth();
-  const [view, setView] = useState<"dashboard" | "designer" | "portfolio">("dashboard");
+  const [view, setView] = useState<
+    "dashboard" | "marketplace" | "subscriptions" | "designer" | "portfolio"
+  >("dashboard");
   const isDesigner = !!principal && DESIGNER_ROLES.includes(principal.role);
 
   return (
@@ -40,6 +44,18 @@ function AuthedApp() {
             onClick={() => setView("dashboard")}
           >
             Dashboard
+          </button>
+          <button
+            className={view === "marketplace" ? "active" : ""}
+            onClick={() => setView("marketplace")}
+          >
+            Marketplace
+          </button>
+          <button
+            className={view === "subscriptions" ? "active" : ""}
+            onClick={() => setView("subscriptions")}
+          >
+            My Subscriptions
           </button>
           {isDesigner && (
             <button
@@ -69,6 +85,10 @@ function AuthedApp() {
         <DesignerStudio />
       ) : view === "portfolio" && isDesigner ? (
         <Portfolio />
+      ) : view === "marketplace" ? (
+        <Marketplace />
+      ) : view === "subscriptions" ? (
+        <MySubscriptions />
       ) : (
         <Dashboard />
       )}

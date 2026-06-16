@@ -30,6 +30,12 @@ interface QualifyResponse {
   criteria: Criterion[];
   perf: Record<string, number | null>;
 }
+interface Earnings {
+  subscriptions: number;
+  gross_cents: number;
+  platform_fee_cents: number;
+  net_cents: number;
+}
 
 export function DesignerStudio() {
   const { api } = useAuth();
@@ -42,10 +48,42 @@ export function DesignerStudio() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [qual, setQual] = useState<{ botId: string; data: QualifyResponse } | null>(null);
+  const [earnings, setEarnings] = useState<Earnings | null>(null);
+  const [publishFor, setPublishFor] = useState<string | null>(null);
+  const [pubTitle, setPubTitle] = useState("");
+  const [pubPrice, setPubPrice] = useState("0");
 
   async function refresh() {
-    const r = await api("/bots");
+    const [r, e] = await Promise.all([api("/bots"), api("/marketplace/earnings")]);
     if (r.ok) setBots((await r.json()) as BotSummary[]);
+    if (e.ok) setEarnings((await e.json()) as Earnings);
+  }
+
+  async function publish(botId: string) {
+    setErr(null);
+    setBusy(true);
+    try {
+      const r = await api("/marketplace/listings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          bot_id: botId,
+          title: pubTitle.trim() || "Untitled bot",
+          price_cents: Math.max(0, Math.round(Number(pubPrice) * 100)),
+        }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(typeof d.detail === "string" ? d.detail : "Publish failed");
+      }
+      setPublishFor(null);
+      setPubTitle("");
+      setPubPrice("0");
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function selectStrategy(s: Strategy) {
@@ -186,6 +224,16 @@ export function DesignerStudio() {
       </section>
 
       <section className="studio-list">
+        {earnings && earnings.subscriptions > 0 && (
+          <div className="earnings">
+            <strong>Earnings</strong> · {earnings.subscriptions} subs · net $
+            {(earnings.net_cents / 100).toFixed(2)}{" "}
+            <span className="muted">
+              (gross ${(earnings.gross_cents / 100).toFixed(2)}, platform fee $
+              {(earnings.platform_fee_cents / 100).toFixed(2)})
+            </span>
+          </div>
+        )}
         <h2>My bots</h2>
         {bots.length === 0 && <p className="muted">No bots yet — create one.</p>}
         {bots.length > 0 && (
@@ -214,6 +262,33 @@ export function DesignerStudio() {
                       <button disabled={busy} onClick={() => void qualify(b.id)}>
                         Run qualification
                       </button>
+                    )}
+                    {b.state === "listed" && publishFor !== b.id && (
+                      <button onClick={() => setPublishFor(b.id)}>Publish to marketplace</button>
+                    )}
+                    {b.state === "listed" && publishFor === b.id && (
+                      <span className="pub-form">
+                        <input
+                          placeholder="Listing title"
+                          value={pubTitle}
+                          onChange={(e) => setPubTitle(e.target.value)}
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          placeholder="$/mo"
+                          value={pubPrice}
+                          onChange={(e) => setPubPrice(e.target.value)}
+                          style={{ width: 72 }}
+                        />
+                        <button disabled={busy} onClick={() => void publish(b.id)}>
+                          Publish
+                        </button>
+                        <button className="ghost" onClick={() => setPublishFor(null)}>
+                          Cancel
+                        </button>
+                      </span>
                     )}
                   </td>
                 </tr>

@@ -784,3 +784,51 @@ body {
   color: #5a6479;
   font-size: 13px;
 }
+
+/* --- Marketplace (M-D) + Subscriptions (M-E) --- */
+.marketplace { padding: 16px; }
+.mk-msg { color: #26a69a; margin: 4px 0 12px; }
+.mk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.mk-card {
+  background: #11161f;
+  border: 1px solid #1c2230;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mk-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.mk-card-head h3 { margin: 0; font-size: 15px; }
+.mk-price { color: #d1d4dc; font-weight: 600; white-space: nowrap; }
+.mk-tags { display: flex; gap: 6px; }
+.mk-tag {
+  font-size: 11px;
+  background: #1c2230;
+  color: #9aa4b2;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.mk-desc { color: #9aa4b2; font-size: 13px; margin: 0; }
+.mk-stats { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.mk-card button.mk-subscribed { background: #1c2230; color: #26a69a; }
+
+.subs { display: grid; grid-template-columns: minmax(280px, 360px) 1fr; gap: 16px; padding: 16px; }
+.subs-replay { display: flex; flex-direction: column; }
+.subs-chart { flex: 1; min-height: 360px; }
+.bots-table tr.row-active { background: #161c27; }
+button.danger { color: #ef5350; }
+button.ghost { background: transparent; color: #9aa4b2; }
+.pub-form { display: inline-flex; gap: 6px; align-items: center; }
+.earnings {
+  background: #11161f;
+  border: 1px solid #1c2230;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
