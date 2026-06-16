@@ -13,6 +13,16 @@ interface BotSummary {
   state: string;
   current_version: number;
 }
+interface SubscriptionInfo {
+  id: string;
+  listing_id: string;
+  symbol: string;
+  strategy_id: string;
+}
+interface Listing {
+  id: string;
+  title: string;
+}
 interface LegPerf {
   return_pct: number;
   net_pnl: number;
@@ -41,9 +51,17 @@ interface PortfolioResult {
   legs: Leg[];
 }
 
+// One allocatable line: a subscribed listing, or an owned bot.
+interface AllocRow {
+  key: string;
+  label: string;
+  kind: "Subscribed" | "Owned";
+  ref: { listing_id?: string; bot_id?: string };
+}
+
 export function Portfolio() {
   const { api } = useAuth();
-  const [bots, setBots] = useState<BotSummary[]>([]);
+  const [rows, setRows] = useState<AllocRow[]>([]);
   const [weights, setWeights] = useState<Record<string, string>>({}); // "" = excluded
   const [capital, setCapital] = useState("100000");
   const [result, setResult] = useState<PortfolioResult | null>(null);
@@ -56,8 +74,29 @@ export function Portfolio() {
 
   useEffect(() => {
     (async () => {
-      const r = await api("/bots");
-      if (r.ok) setBots((await r.json()) as BotSummary[]);
+      const [s, b, l] = await Promise.all([
+        api("/subscriptions"),
+        api("/bots"),
+        api("/marketplace/listings"),
+      ]);
+      const subs = s.ok ? ((await s.json()) as SubscriptionInfo[]) : [];
+      const bots = b.ok ? ((await b.json()) as BotSummary[]) : [];
+      const listings = l.ok ? ((await l.json()) as Listing[]) : [];
+      const title = new Map(listings.map((x) => [x.id, x.title]));
+
+      const subRows: AllocRow[] = subs.map((sub) => ({
+        key: `listing:${sub.listing_id}`,
+        label: `${title.get(sub.listing_id) ?? sub.symbol} (${sub.symbol})`,
+        kind: "Subscribed",
+        ref: { listing_id: sub.listing_id },
+      }));
+      const botRows: AllocRow[] = bots.map((bot) => ({
+        key: `bot:${bot.id}`,
+        label: bot.name,
+        kind: "Owned",
+        ref: { bot_id: bot.id },
+      }));
+      setRows([...subRows, ...botRows]);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -94,20 +133,20 @@ export function Portfolio() {
     }
   }, [result]);
 
-  function toggle(id: string, on: boolean) {
-    setWeights((w) => ({ ...w, [id]: on ? w[id] || "1" : "" }));
+  function toggle(key: string, on: boolean) {
+    setWeights((w) => ({ ...w, [key]: on ? w[key] || "1" : "" }));
   }
-  function setWeight(id: string, v: string) {
-    setWeights((w) => ({ ...w, [id]: v }));
+  function setWeight(key: string, v: string) {
+    setWeights((w) => ({ ...w, [key]: v }));
   }
 
   async function run() {
     setErr(null);
     setBusy(true);
     try {
-      const allocations = bots
-        .filter((b) => (weights[b.id] ?? "") !== "" && Number(weights[b.id]) > 0)
-        .map((b) => ({ bot_id: b.id, weight: Number(weights[b.id]) }));
+      const allocations = rows
+        .filter((r) => (weights[r.key] ?? "") !== "" && Number(weights[r.key]) > 0)
+        .map((r) => ({ ...r.ref, weight: Number(weights[r.key]) }));
       if (allocations.length === 0) {
         setErr("Select at least one bot with a weight.");
         return;
@@ -137,34 +176,37 @@ export function Portfolio() {
           Capital
           <input type="number" value={capital} onChange={(e) => setCapital(e.target.value)} />
         </label>
-        {bots.length === 0 && (
-          <p className="muted">No bots yet — create some in Designer Studio.</p>
+        {rows.length === 0 && (
+          <p className="muted">
+            Nothing to allocate yet — subscribe to a bot in the Marketplace (or create one in
+            Designer Studio).
+          </p>
         )}
-        {bots.length > 0 && (
+        {rows.length > 0 && (
           <table className="bots-table">
             <thead>
               <tr>
                 <th />
                 <th>Bot</th>
-                <th>State</th>
+                <th>Source</th>
                 <th>Weight</th>
               </tr>
             </thead>
             <tbody>
-              {bots.map((b) => {
-                const included = (weights[b.id] ?? "") !== "";
+              {rows.map((row) => {
+                const included = (weights[row.key] ?? "") !== "";
                 return (
-                  <tr key={b.id}>
+                  <tr key={row.key}>
                     <td>
                       <input
                         type="checkbox"
                         checked={included}
-                        onChange={(e) => toggle(b.id, e.target.checked)}
+                        onChange={(e) => toggle(row.key, e.target.checked)}
                       />
                     </td>
-                    <td>{b.name}</td>
+                    <td>{row.label}</td>
                     <td>
-                      <span className={`lc-state lifecycle-${b.state}`}>{b.state}</span>
+                      <span className="mk-tag">{row.kind}</span>
                     </td>
                     <td>
                       <input
@@ -172,8 +214,8 @@ export function Portfolio() {
                         min={0}
                         step={0.5}
                         disabled={!included}
-                        value={weights[b.id] ?? ""}
-                        onChange={(e) => setWeight(b.id, e.target.value)}
+                        value={weights[row.key] ?? ""}
+                        onChange={(e) => setWeight(row.key, e.target.value)}
                         style={{ width: 64 }}
                       />
                     </td>

@@ -65,14 +65,12 @@ function AuthedApp() {
               Designer Studio
             </button>
           )}
-          {isDesigner && (
-            <button
-              className={view === "portfolio" ? "active" : ""}
-              onClick={() => setView("portfolio")}
-            >
-              Portfolio
-            </button>
-          )}
+          <button
+            className={view === "portfolio" ? "active" : ""}
+            onClick={() => setView("portfolio")}
+          >
+            Portfolio
+          </button>
         </nav>
         <div className="user-box">
           <span className="muted">
@@ -83,7 +81,7 @@ function AuthedApp() {
       </header>
       {view === "designer" && isDesigner ? (
         <DesignerStudio />
-      ) : view === "portfolio" && isDesigner ? (
+      ) : view === "portfolio" ? (
         <Portfolio />
       ) : view === "marketplace" ? (
         <Marketplace />
