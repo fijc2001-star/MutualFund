@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     root_admin_email: str | None = None
     default_tenant_id: str = "00000000000000000000000000000000"
 
+    # Marketplace (M-D/M-E). The platform never custodies money (REQUIREMENTS): paid
+    # subscriptions are recorded as accounting entries, and the platform keeps this cut of
+    # designer subscription revenue (the rest is the designer's net payout).
+    platform_fee_pct: Decimal = Decimal("0.20")
+
     # Sandbox / fill models (REQUIREMENTS §5.5.1) — conservative defaults, all tunable.
     sandbox_starting_cash: Decimal = Decimal(100_000)
     slippage_bps: Decimal = Decimal(5)

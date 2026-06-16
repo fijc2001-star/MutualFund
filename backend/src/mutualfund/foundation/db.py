@@ -77,7 +77,7 @@ def configure_engine(engine: AsyncEngine) -> None:
 
 def _register_models() -> None:
     # Import models so they register on Base.metadata before create_all.
-    from .. import iam, ledger, strategy, subscription  # noqa: F401
+    from .. import iam, ledger, marketplace, strategy, subscription  # noqa: F401
     from . import audit  # noqa: F401
 
 
