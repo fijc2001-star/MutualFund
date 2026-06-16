@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -19,6 +20,8 @@ from ..config import get_settings
 from ..foundation.ids import TenantId
 from ..foundation.tenant import TenantContext
 from ..foundation.uow import UnitOfWork
+from ..strategy.strategy import BotDefinition
+from ..subscription.models import Subscription
 from ..subscription.service import SubscriptionService
 from .demo import DemoFeed, bar_dict, signal_dict
 from .sandbox_session import SandboxSession
@@ -128,9 +131,21 @@ async def replay_stream(websocket: WebSocket) -> None:
     try:
         async with UnitOfWork() as uow:
             svc = SubscriptionService(uow.session)
-            sub = await svc.subscribe(symbol)
+            stream_id = f"bot:demo:{symbol}"
+            definition = BotDefinition("sma_cross", {"fast": 9, "slow": 21}, (symbol,))
+            await svc.materialize_stream(stream_id, symbol, definition)
+            # A transient (un-persisted) window over the shared stream from the beginning.
+            sub = Subscription(
+                subscriber="demo",
+                listing_id="demo",
+                symbol=symbol,
+                strategy_id="sma_cross",
+                stream_id=stream_id,
+                started_at=datetime.fromtimestamp(0, UTC),
+                created_at=datetime.now(UTC),
+            )
             bars, signals = await svc.replay(sub)
-            await uow.commit()  # persist the subscription + materialized signal stream
+            await uow.commit()  # persist the materialized signal stream
 
         # Backtest the bot over its history for the equity curve + stats. Runs in its own
         # unit of work that we roll back, so the throwaway fills never persist.

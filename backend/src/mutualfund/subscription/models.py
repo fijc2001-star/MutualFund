@@ -14,12 +14,14 @@ class Subscription(Base, Entity, TenantScoped):
     __tablename__ = "subscriptions"
     __table_args__ = (
         UniqueConstraint(
-            "tenant_id", "subscriber", "symbol", "strategy_id",
-            name="uq_subscription_tenant_subscriber_bot",
+            "tenant_id", "subscriber", "listing_id",
+            name="uq_subscription_tenant_subscriber_listing",
         ),
     )
 
     subscriber: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # The marketplace listing this subscription is for (M-D/M-E).
+    listing_id: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     symbol: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
     strategy_id: Mapped[str] = mapped_column(String(40), nullable=False)
     # Stable id of the *bot's* shared signal stream on the ledger (not per-subscription).

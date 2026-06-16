@@ -65,6 +65,19 @@ async def my_listings(principal: DesignerPrincipal) -> list[dict[str, Any]]:
     return [listing_dict(listing) for listing in listings]
 
 
+class EarningsInfo(BaseModel):
+    subscriptions: int
+    gross_cents: int
+    platform_fee_cents: int
+    net_cents: int
+
+
+@router.get("/earnings", response_model=EarningsInfo)
+async def earnings(principal: DesignerPrincipal) -> dict[str, Any]:
+    async with UnitOfWork() as uow:
+        return await MarketplaceService(uow.session).earnings_for(principal.user_id)
+
+
 @router.get("/listings/{listing_id}", response_model=ListingInfo)
 async def get_listing(listing_id: str, _: CurrentPrincipal) -> dict[str, Any]:
     async with UnitOfWork() as uow:

@@ -17,7 +17,7 @@ from ..foundation.clock import Clock, SystemClock
 from ..foundation.repository import TenantRepository
 from ..foundation.tenant import TenantContext
 from ..strategy.models import Bot, BotVersion
-from .models import Listing
+from .models import BillingEntry, Listing
 
 
 class ListingError(ValueError):
@@ -123,6 +123,23 @@ class MarketplaceService:
             .order_by(Listing.created_at.desc())
         )
         return list((await self._session.execute(stmt)).scalars().all())
+
+    async def earnings_for(self, owner_id: str) -> dict[str, Any]:
+        """A designer's revenue summary from recorded billing entries."""
+        stmt = select(BillingEntry).where(
+            BillingEntry.tenant_id == TenantContext.get(),
+            BillingEntry.designer_id == owner_id,
+        )
+        entries = list((await self._session.execute(stmt)).scalars().all())
+        gross = sum(e.gross_cents for e in entries)
+        fee = sum(e.platform_fee_cents for e in entries)
+        net = sum(e.designer_net_cents for e in entries)
+        return {
+            "subscriptions": len(entries),
+            "gross_cents": gross,
+            "platform_fee_cents": fee,
+            "net_cents": net,
+        }
 
     async def _for_bot(self, bot_id: str) -> Listing | None:
         stmt = select(Listing).where(
